@@ -1,0 +1,14 @@
+# Normalizza tutto a LF nel repository: il codice gira su Linux (Railway e
+# Netlify) e uno shebang seguito da CRLF rende gli script non eseguibili.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff binary
+*.woff2 binary
+
+package-lock.json linguist-generated=true -diff
