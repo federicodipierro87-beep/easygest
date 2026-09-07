@@ -1,0 +1,26 @@
+{
+  "name": "@easygest/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.3",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.13"
+  },
+  "dependencies": {
+    "@easygest/shared": "*",
+    "@fastify/cors": "^11.3.0",
+    "@fastify/helmet": "^13.1.1",
+    "@fastify/rate-limit": "^11.2.0",
+    "fastify": "^5.12.3",
+    "zod": "^4.5.4"
+  }
+}
