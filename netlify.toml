@@ -1,0 +1,42 @@
+# Configurazione Netlify per il frontend.
+#
+# La base resta la radice del repository e non `apps/web`: le dipendenze sono
+# gestite da npm workspaces e installarle dalla sottocartella romperebbe il
+# collegamento con `packages/shared`.
+
+[build]
+  command = "npm run build -w @easygest/web"
+  publish = "apps/web/dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Netlify di default installa anche le devDependencies: servono, perché Vite
+  # e TypeScript sono lì dentro.
+  NPM_FLAGS = "--include=dev"
+
+# L'applicazione è una SPA: qualunque URL deve servire index.html, altrimenti
+# ricaricare la pagina su /spese/123 restituisce 404 invece della rotta React.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=()"
+
+# Gli asset hanno l'hash del contenuto nel nome: possono essere cachati per
+# sempre. index.html no, altrimenti un deploy non si vedrebbe mai.
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
