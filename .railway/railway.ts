@@ -23,6 +23,14 @@ import { defineRailway, github, postgres, project, service, volume } from 'railw
  */
 const REGION = 'europe-west4';
 
+/**
+ * I volumi vivono in una zona specifica, non nella regione generica. Railway
+ * normalizza `europe-west4` in `europe-west4-drams3a`: scrivere qui la regione
+ * generica farebbe vedere a ogni `plan` una differenza inesistente, e ogni
+ * `apply` ricreerebbe il volume — cioè cancellerebbe il database.
+ */
+const VOLUME_REGION = 'europe-west4-drams3a';
+
 export default defineRailway(() => {
   const Postgres = postgres('Postgres', { region: REGION });
   Postgres.networking = { privateNetworkEndpoint: 'postgres' };
@@ -30,7 +38,7 @@ export default defineRailway(() => {
   const postgresVolume = volume('postgres-volume', {
     alerts: { usage: { '80': {}, '95': {}, '100': {} } },
     allowOnlineResize: true,
-    region: REGION,
+    region: VOLUME_REGION,
     sizeMB: 5000,
   });
 
@@ -44,11 +52,12 @@ export default defineRailway(() => {
 
     build: {
       builder: 'RAILPACK',
-      // `--include=dev` è obbligatorio: NODE_ENV vale `production` e senza il
-      // flag npm salterebbe le devDependencies, cioè tsup e TypeScript, e la
-      // build fallirebbe. La build parte dalla radice perché le dipendenze
-      // sono gestite da npm workspaces.
-      buildCommand: 'npm ci --include=dev && npm run build -w @easygest/api',
+      // Solo la build: le dipendenze le ha già installate Railpack nella sua
+      // fase di install. Un `npm ci` qui cancellerebbe `node_modules` mentre
+      // le cache di build sono montate lì dentro, e fallisce con EBUSY.
+      // La build parte dalla radice perché le dipendenze sono gestite da npm
+      // workspaces: installarle da `apps/api` romperebbe `packages/shared`.
+      buildCommand: 'npm run build -w @easygest/api',
       // Senza questi pattern ogni modifica al frontend farebbe ricostruire e
       // riavviare anche l'API, per niente.
       watchPatterns: [
@@ -71,13 +80,20 @@ export default defineRailway(() => {
     replicas: { [REGION]: 1 },
 
     deploy: {
-      restartPolicyType: 'ON_FAILURE',
+      // `restartPolicyType` non è dichiarato di proposito. Railway lo applica
+      // correttamente (`ON_FAILURE`, che è anche il suo default) ma poi lo
+      // rilegge come null, e ogni `plan` mostrerebbe una modifica che non
+      // esiste. Un piano che segnala sempre differenze inesistenti abitua a
+      // non leggerlo, ed è così che prima o poi si approva una cancellazione.
       restartPolicyMaxRetries: 3,
     },
 
     env: {
       NODE_ENV: 'production',
       LOG_LEVEL: 'info',
+      // Con NODE_ENV=production npm tende a saltare le devDependencies, cioè
+      // tsup e TypeScript, che servono proprio a produrre il bundle.
+      NPM_CONFIG_INCLUDE: 'dev',
       // Deve contenere l'URL Netlify esatto: il refresh token viaggerà in un
       // cookie e con le credenziali la wildcard `*` è vietata dalla specifica.
       CORS_ORIGINS: 'https://easygest.netlify.app',
