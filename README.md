@@ -18,7 +18,7 @@ Fa due cose:
 
 | Livello  | Tecnologie                                                           | Deploy  |
 | -------- | -------------------------------------------------------------------- | ------- |
-| Backend  | Node 22, TypeScript, Fastify 5, Prisma, PostgreSQL 17                | Railway |
+| Backend  | Node 22, TypeScript, Fastify 5, Prisma, PostgreSQL 18                | Railway |
 | Frontend | React 19, Vite, Tailwind v4, shadcn/ui, TanStack Query, Recharts     | Netlify |
 | File     | Storage S3-compatible (Cloudflare R2 in produzione, MinIO in locale) | —       |
 | Email    | Resend, dietro un'interfaccia `NotificationChannel`                  | —       |
@@ -87,14 +87,23 @@ conflitto con un'eventuale installazione già presente sulla macchina.
 Ogni push su `main` passa dalla CI (lint, typecheck, test, build) e viene poi
 pubblicato automaticamente: il frontend su Netlify, l'API su Railway.
 
-| Componente | Piattaforma | Configurazione     |
-| ---------- | ----------- | ------------------ |
-| Frontend   | Netlify     | `netlify.toml`     |
-| API        | Railway     | `railway.api.json` |
-| Postgres   | Railway     | plugin gestito     |
+| Componente | Piattaforma | Configurazione        |
+| ---------- | ----------- | --------------------- |
+| Frontend   | Netlify     | `netlify.toml`        |
+| API        | Railway     | `.railway/railway.ts` |
+| Postgres   | Railway     | `.railway/railway.ts` |
 
 Le impostazioni di build stanno in quei due file, versionati: non vanno
 reimpostate a mano se il progetto viene ricreato.
+
+`.railway/railway.ts` è **dichiarativo e distruttivo per omissione**: una
+risorsa tolta dal file viene cancellata su Railway. Non va mai applicato alla
+cieca.
+
+```bash
+npx railway config plan    # mostra il diff, non tocca nulla
+npx railway config apply   # applica, chiedendo conferma
+```
 
 Le variabili d'ambiente vanno invece impostate sulle rispettive piattaforme.
 Sono documentate una per una, con significato e valore di produzione, in

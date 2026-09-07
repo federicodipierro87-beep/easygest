@@ -2,7 +2,9 @@ name: easygest
 
 services:
   postgres:
-    image: postgres:17-alpine
+    # Stessa major di Railway in produzione: una differenza di versione fra i
+    # due ambienti si scopre sempre nel momento peggiore.
+    image: postgres:18-alpine
     container_name: easygest-postgres
     restart: unless-stopped
     environment:

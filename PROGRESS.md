@@ -119,8 +119,31 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 ### Deploy
 
 - **Configurazione come codice**, non come click: `netlify.toml` e
-  `railway.api.json` stanno nel repository. Se un giorno il sito va ricreato da
-  zero, le impostazioni di build non vanno ricostruite a memoria.
+  `.railway/railway.ts` stanno nel repository. Se un giorno il progetto va
+  ricreato da zero, le impostazioni di build non vanno ricostruite a memoria.
+- **Railway usa Infrastructure as Code, non `railway.json`.** Il primo tentativo
+  è stato con `railway.api.json`: Railway lo ha rifiutato, perché ha deprecato
+  quel formato e non lo accetta più per i servizi nuovi (i vecchi smettono di
+  essere letti il 2026-12-01). Il file è stato riscritto come
+  `.railway/railway.ts`.
+- **L'IaC è dichiarativo e distruttivo per omissione**: ciò che non è nel file
+  viene cancellato. Per questo il file è stato importato dallo stato reale con
+  un `pull`, e non scritto a mano: un file parziale applicato per errore
+  avrebbe cancellato il database. Il `plan` mostra sempre il diff prima
+  dell'`apply`.
+- **Regione `europe-west4` (Amsterdam), non il default `us-west2`.** Sono
+  documenti fiscali di un professionista italiano: restano nell'Unione Europea,
+  e per giunta con ~150 ms di latenza in meno. Spostare la regione ricrea il
+  volume, quindi andava fatto adesso che il database è vuoto.
+- **Railway attende l'esito di GitHub Actions prima di costruire**
+  (`checkSuites: true`): se lint, typecheck o test falliscono, quel commit non
+  arriva in produzione.
+- **`watchPatterns` limita le build dell'API alle cartelle che la riguardano.**
+  In un monorepo, senza, ogni modifica al frontend farebbe ricostruire e
+  riavviare anche il backend.
+- **Nel build command serve `npm ci --include=dev`**: `NODE_ENV` vale
+  `production` e senza il flag npm salterebbe le devDependencies, cioè tsup e
+  TypeScript, facendo fallire la build.
 - **Netlify builda dalla radice del repository, non da `apps/web`.** Le
   dipendenze sono gestite da npm workspaces: installare dalla sottocartella
   romperebbe il collegamento con `packages/shared`.
@@ -154,3 +177,11 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   usare**, bloccando qualunque comando non interattivo. Va sempre passato
   `--filter @easygest/web`. Riguarda solo la CLI: le build da Git leggono
   `netlify.toml` e non fanno domande.
+- **`railway config` non funziona da git-bash.** L'SDK verifica la versione
+  della CLI eseguendo `process.env._`, che sotto git-bash contiene un percorso
+  POSIX (`/c/Users/...`) che Windows non sa avviare, e fallisce con un
+  fuorviante «requires Railway CLI 5.42.1 or newer» anche con la 5.49.
+  Va usato PowerShell o il Prompt dei comandi.
+- **Il volume Postgres locale va ricreato** dopo il passaggio da 17 a 18:
+  Postgres non avvia una data directory di una major precedente. Non essendoci
+  ancora schema né dati, basta `npm run infra:reset`.

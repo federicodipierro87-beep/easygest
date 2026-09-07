@@ -17,7 +17,7 @@
     "dev:api": "npm run dev -w @easygest/api",
     "dev:web": "npm run dev -w @easygest/web",
     "build": "npm run build -w @easygest/api && npm run build -w @easygest/web",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "tsc --noEmit && npm run typecheck --workspaces --if-present",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -36,6 +36,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.12.0",
     "prettier": "^3.9.6",
+    "railway": "^3.11.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.69.0",
     "vitest": "^5.0.0"
