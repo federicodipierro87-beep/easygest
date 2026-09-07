@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Un push che ne segue un altro sullo stesso ramo annulla la verifica
+# precedente: non ha senso pagare minuti per un commit già superato.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # `npm ci` e non `npm install`: installa esattamente il lockfile e
+      # fallisce se package.json e package-lock.json sono disallineati.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+        env:
+          # Valore fittizio: qui interessa solo che la build passi, l'URL vero
+          # è iniettato da Netlify al momento del deploy.
+          VITE_API_URL: https://api.example.invalid
