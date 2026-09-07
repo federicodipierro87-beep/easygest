@@ -82,10 +82,21 @@ conflitto con un'eventuale installazione già presente sulla macchina.
 | `npm run infra:down`  | Ferma i container, mantenendo i dati                    |
 | `npm run infra:reset` | Ferma i container **cancellando i volumi**, poi riavvia |
 
+## Ambiente pubblico
+
+| Cosa     | URL                                                 |
+| -------- | --------------------------------------------------- |
+| Frontend | <https://easygest.netlify.app>                      |
+| API      | <https://api-production-d716.up.railway.app>        |
+| Health   | <https://api-production-d716.up.railway.app/health> |
+
 ## Deploy
 
 Ogni push su `main` passa dalla CI (lint, typecheck, test, build) e viene poi
 pubblicato automaticamente: il frontend su Netlify, l'API su Railway.
+
+Railway **attende l'esito di GitHub Actions** prima di costruire: se lint,
+typecheck o test falliscono, quel commit non arriva in produzione.
 
 | Componente | Piattaforma | Configurazione        |
 | ---------- | ----------- | --------------------- |

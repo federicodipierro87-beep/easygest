@@ -10,7 +10,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | Fase | Contenuto                                                           | Stato         |
 | ---- | ------------------------------------------------------------------- | ------------- |
 | 0    | Scaffolding monorepo, config, CI, Docker locale, health check       | ✅ Completata |
-| 0.5  | Deploy anticipato: Netlify + Railway + Postgres gestito             | 🟡 In corso   |
+| 0.5  | Deploy anticipato: Netlify + Railway + Postgres gestito             | ✅ Completata |
 | 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | ⬜ Da fare    |
 | 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ⬜ Da fare    |
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ⬜ Da fare    |
@@ -36,6 +36,8 @@ di pubblicare, l'ambiente di riferimento è quello deployato.
 | ---------- | --------------------------------- | --------------------------------------------------------------- |
 | Locale     | Docker Compose (Postgres, MinIO)  | Verifica delle modifiche prima del push                         |
 | Produzione | Railway (API + Postgres), Netlify | L'ambiente che il committente usa e in cui inserisce dati reali |
+
+Gli URL pubblici sono in [`README.md`](./README.md#ambiente-pubblico).
 
 I due database sono **separati di proposito**: una migrazione sbagliata provata
 in locale non tocca i dati già inseriti in produzione.
@@ -135,15 +137,26 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   documenti fiscali di un professionista italiano: restano nell'Unione Europea,
   e per giunta con ~150 ms di latenza in meno. Spostare la regione ricrea il
   volume, quindi andava fatto adesso che il database è vuoto.
+- **Il `plan` deve poter risultare vuoto.** Due dichiarazioni mostravano una
+  differenza a ogni esecuzione pur essendo già applicate: la regione del volume,
+  che Railway normalizza in `europe-west4-drams3a`, e `restartPolicyType`, che
+  viene applicato ma riletto `null`. La prima è stata allineata alla zona reale,
+  la seconda tolta. Non è cosmesi: la regione del volume compariva fra le
+  modifiche **distruttive**, e un piano che segnala sempre differenze
+  inesistenti abitua a non leggerlo — ed è così che prima o poi si conferma una
+  cancellazione vera.
 - **Railway attende l'esito di GitHub Actions prima di costruire**
   (`checkSuites: true`): se lint, typecheck o test falliscono, quel commit non
   arriva in produzione.
 - **`watchPatterns` limita le build dell'API alle cartelle che la riguardano.**
   In un monorepo, senza, ogni modifica al frontend farebbe ricostruire e
   riavviare anche il backend.
-- **Nel build command serve `npm ci --include=dev`**: `NODE_ENV` vale
-  `production` e senza il flag npm salterebbe le devDependencies, cioè tsup e
-  TypeScript, facendo fallire la build.
+- **Il build command non installa le dipendenze**, le installa Railpack nella
+  sua fase di install. Il primo tentativo anteponeva un `npm ci`: cancellava
+  `node_modules` mentre le cache di build sono montate lì dentro, e la build
+  falliva con `EBUSY`. Le devDependencies — tsup e TypeScript, cioè proprio
+  quelle che producono il bundle — sono garantite da `NPM_CONFIG_INCLUDE=dev`,
+  perché con `NODE_ENV=production` npm le salterebbe.
 - **Netlify builda dalla radice del repository, non da `apps/web`.** Le
   dipendenze sono gestite da npm workspaces: installare dalla sottocartella
   romperebbe il collegamento con `packages/shared`.
@@ -182,6 +195,20 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   POSIX (`/c/Users/...`) che Windows non sa avviare, e fallisce con un
   fuorviante «requires Railway CLI 5.42.1 or newer» anche con la 5.49.
   Va usato PowerShell o il Prompt dei comandi.
+- **Un dominio Railway generato prima di un cambio di regione smette di
+  funzionare.** Dopo lo spostamento in `europe-west4` il dominio creato quando
+  il servizio era ancora in `us-west2` rispondeva `404 Application not found`
+  dal proxy, mentre il deploy era `SUCCESS` e i log applicativi mostravano
+  richieste servite regolarmente. Né impostare la `targetPort` né un redeploy
+  hanno risolto: il routing sul bordo era rimasto legato alla vecchia regione.
+  È bastato cancellare e ricreare il dominio, ed è il motivo per cui l'host
+  dell'API contiene `d716` e non il suffisso assegnato la prima volta. Se
+  ricapita: prima di cercare il problema nell'applicazione, ricreare il dominio.
+- **Netlify non è ancora collegato al repository GitHub.** Il collegamento
+  richiede di installare la GitHub App dal browser, cosa che la CLI non può
+  fare (non conserva un token GitHub). Finché non è fatto, il frontend si
+  pubblica a mano con `netlify deploy --prod --filter @easygest/web`. L'API su
+  Railway è invece già collegata e si aggiorna da sola a ogni push.
 - **Il volume Postgres locale va ricreato** dopo il passaggio da 17 a 18:
   Postgres non avvia una data directory di una major precedente. Non essendoci
   ancora schema né dati, basta `npm run infra:reset`.
