@@ -10,6 +10,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | Fase | Contenuto                                                           | Stato         |
 | ---- | ------------------------------------------------------------------- | ------------- |
 | 0    | Scaffolding monorepo, config, CI, Docker locale, health check       | ✅ Completata |
+| 0.5  | Deploy anticipato: Netlify + Railway + Postgres gestito             | 🟡 In corso   |
 | 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | ⬜ Da fare    |
 | 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ⬜ Da fare    |
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ⬜ Da fare    |
@@ -17,7 +18,30 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | 5    | Dashboard, report, export CSV e PDF                                 | ⬜ Da fare    |
 | 6    | Previsioni e simulatore what-if                                     | ⬜ Da fare    |
 | 7    | Archivio documenti: upload R2, ricerca full-text, export ZIP        | ⬜ Da fare    |
-| 8    | Deploy Railway e Netlify, documentazione finale                     | ⬜ Da fare    |
+| 8    | Rifinitura, documentazione finale, hardening                        | ⬜ Da fare    |
+
+La Fase 8 era «deploy». È stata anticipata a **0.5**: il committente non lavora
+in locale e vuole provare ogni fase su un URL. Rimandare il deploy alla fine
+avrebbe significato scoprire solo all'ultimo i problemi che si vedono unicamente
+in produzione — CORS, cookie cross-site, variabili d'ambiente, build in CI.
+
+---
+
+## Flusso di lavoro
+
+Lo sviluppo è **online-first**: il locale serve solo a me per verificare prima
+di pubblicare, l'ambiente di riferimento è quello deployato.
+
+| Ambiente   | Dove                              | A cosa serve                                                    |
+| ---------- | --------------------------------- | --------------------------------------------------------------- |
+| Locale     | Docker Compose (Postgres, MinIO)  | Verifica delle modifiche prima del push                         |
+| Produzione | Railway (API + Postgres), Netlify | L'ambiente che il committente usa e in cui inserisce dati reali |
+
+I due database sono **separati di proposito**: una migrazione sbagliata provata
+in locale non tocca i dati già inseriti in produzione.
+
+Ciclo: commit → push su `main` → CI (lint, typecheck, test, build) → deploy
+automatico su Railway e Netlify → verifica sull'URL pubblico.
 
 ---
 
@@ -92,6 +116,24 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
   con start command diverso: nessuna duplicazione del client Prisma, una sola
   build, e log separati da quelli delle richieste HTTP.
 
+### Deploy
+
+- **Configurazione come codice**, non come click: `netlify.toml` e
+  `railway.api.json` stanno nel repository. Se un giorno il sito va ricreato da
+  zero, le impostazioni di build non vanno ricostruite a memoria.
+- **Netlify builda dalla radice del repository, non da `apps/web`.** Le
+  dipendenze sono gestite da npm workspaces: installare dalla sottocartella
+  romperebbe il collegamento con `packages/shared`.
+- **`VITE_API_URL` è sostituita a build time**, non letta a runtime: cambiare
+  l'URL dell'API richiede un nuovo deploy del frontend, non solo il riavvio.
+  Per la stessa ragione lì dentro non può finire nulla di segreto.
+- **`CORS_ORIGINS` sull'API contiene l'URL Netlify esatto.** Il refresh token
+  viaggerà in un cookie: con le credenziali la wildcard `*` è vietata dalla
+  specifica, quindi la lista deve essere corretta o il login non funziona.
+- **Sourcemap pubblicate anche in produzione.** Un bundle client è comunque
+  leggibile e non contiene segreti; in cambio un errore in produzione si legge
+  con lo stack originale invece che su codice minificato.
+
 ---
 
 ## Debiti tecnici e note
@@ -108,3 +150,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
   attrito che valore; da rivalutare a schema stabile.
 - La CI non ha ancora un database: verrà aggiunto un service Postgres nel
   workflow quando arriveranno i test di integrazione, nella Fase 1.
+- **La CLI Netlify rileva il monorepo e chiede da terminale quale workspace
+  usare**, bloccando qualunque comando non interattivo. Va sempre passato
+  `--filter @easygest/web`. Riguarda solo la CLI: le build da Git leggono
+  `netlify.toml` e non fanno domande.

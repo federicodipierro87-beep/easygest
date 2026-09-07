@@ -84,15 +84,29 @@ conflitto con un'eventuale installazione già presente sulla macchina.
 
 ## Deploy
 
-Le istruzioni passo-passo per Railway (API, Postgres, cron) e Netlify
-(frontend), con l'elenco completo delle variabili d'ambiente da impostare su
-ciascuna piattaforma, sono scritte nella **Fase 8**.
+Ogni push su `main` passa dalla CI (lint, typecheck, test, build) e viene poi
+pubblicato automaticamente: il frontend su Netlify, l'API su Railway.
 
-Le variabili sono già documentate una per una, con il loro significato e il
-valore da usare in produzione, in:
+| Componente | Piattaforma | Configurazione     |
+| ---------- | ----------- | ------------------ |
+| Frontend   | Netlify     | `netlify.toml`     |
+| API        | Railway     | `railway.api.json` |
+| Postgres   | Railway     | plugin gestito     |
 
-- `apps/api/.env.example`
-- `apps/web/.env.example`
+Le impostazioni di build stanno in quei due file, versionati: non vanno
+reimpostate a mano se il progetto viene ricreato.
+
+Le variabili d'ambiente vanno invece impostate sulle rispettive piattaforme.
+Sono documentate una per una, con significato e valore di produzione, in
+`apps/api/.env.example` e `apps/web/.env.example`. Le due che collegano fra loro
+i due deploy:
+
+- su Railway, `CORS_ORIGINS` deve contenere l'URL Netlify esatto;
+- su Netlify, `VITE_API_URL` deve contenere l'URL Railway.
+
+`VITE_API_URL` viene sostituita **a build time**: cambiarla richiede un nuovo
+deploy del frontend, non basta riavviare. Per lo stesso motivo non può
+contenere segreti.
 
 ## Stato del progetto
 
