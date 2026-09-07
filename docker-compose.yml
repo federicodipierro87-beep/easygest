@@ -1,0 +1,60 @@
+name: easygest
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: easygest-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: easygest
+      POSTGRES_PASSWORD: easygest
+      POSTGRES_DB: easygest
+    ports:
+      # 5433 e non 5432: se hai già un Postgres installato sulla macchina
+      # non devi spegnerlo per lavorare al progetto.
+      - '5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U easygest -d easygest']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # MinIO è S3-compatible: in locale sostituisce Cloudflare R2 senza cambiare
+  # una riga di codice applicativo, basta cambiare endpoint e credenziali.
+  minio:
+    image: minio/minio:latest
+    container_name: easygest-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: easygest
+      MINIO_ROOT_PASSWORD: easygest-dev-secret
+    ports:
+      - '9000:9000' # API S3
+      - '9001:9001' # console web
+    volumes:
+      - minio-data:/data
+
+  # Crea il bucket al primo avvio e imposta il CORS necessario agli upload
+  # presigned fatti direttamente dal browser in sviluppo.
+  minio-init:
+    image: minio/mc:latest
+    container_name: easygest-minio-init
+    depends_on:
+      - minio
+    restart: 'no'
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 easygest easygest-dev-secret; do
+        echo 'attendo MinIO...'; sleep 2;
+      done;
+      mc mb --ignore-existing local/easygest-documents;
+      mc anonymous set none local/easygest-documents;
+      echo 'bucket easygest-documents pronto';
+      "
+
+volumes:
+  postgres-data:
+  minio-data:
