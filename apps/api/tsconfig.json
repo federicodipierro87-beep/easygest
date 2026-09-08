@@ -4,5 +4,8 @@
     "lib": ["ES2023"],
     "types": ["node"]
   },
-  "include": ["src", "tsup.config.ts"]
+  // `prisma` serve per `seed.ts`, e `prisma.config.ts` perché ESLint con
+  // `projectService` si rifiuta di analizzare un file che nessun tsconfig
+  // include: senza, resterebbe l'unico file del progetto mai controllato.
+  "include": ["src", "prisma", "prisma.config.ts", "tsup.config.ts"]
 }

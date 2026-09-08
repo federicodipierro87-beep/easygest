@@ -1,0 +1,640 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// EasyGest — modello dati
+//
+// Regole valide per tutto il file, decise una volta e mai derogate:
+//
+//   • Gli importi sono interi in centesimi (`...Cents`). Nessun `Float`, mai.
+//   • Le aliquote sono interi in basis point (`...Bp`): 2200 = 22,00%.
+//   • Le date di business sono `@db.Date`, senza ora: una scadenza è un giorno,
+//     non un istante, e modellarla così elimina alla radice i bug di ora legale.
+//     I timestamp tecnici (createdAt, sentAt) restano `DateTime` in UTC.
+//   • Ogni entità ha `userId`. L'app oggi ha un utente solo, ma aggiungere la
+//     colonna dopo, con i dati dentro, è molto più costoso che averla subito.
+//   • I nomi restano in camelCase, quindi in SQL grezzo vanno virgolettati.
+//     È il prezzo per non ripetere una `@map` su ogni singolo campo.
+// ─────────────────────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Dalla 7 l'URL non sta più qui: le migrazioni lo leggono da
+// `prisma.config.ts`, e il client lo riceve da un driver adapter esplicito.
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Utente e sessioni
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  displayName  String
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  settings       Settings?
+  refreshTokens  RefreshToken[]
+  clients        Client[]
+  vendors        Vendor[]
+  categories     Category[]
+  paymentMethods PaymentMethod[]
+  expenses       Expense[]
+  occurrences    ExpenseOccurrence[]
+  documents      Document[]
+  notifications  Notification[]
+  reminderLogs   ReminderLog[]
+}
+
+/// Refresh token, salvato solo come hash.
+///
+/// Il token in chiaro vive nel cookie httpOnly del browser e da nessun'altra
+/// parte: chi legge il database non può impersonare nessuno.
+model RefreshToken {
+  id        String @id @default(cuid())
+  userId    String
+  /// SHA-256 del token. Unico, così un replay non può creare un secondo record.
+  tokenHash String @unique
+
+  /// Tutti i token nati dallo stesso login condividono la famiglia. Se ne
+  /// ricompare uno già ruotato vuol dire che qualcuno ha copiato il cookie:
+  /// si invalida l'intera famiglia, non solo quel token.
+  familyId String
+
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  userAgent String?
+  ipAddress String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, familyId])
+  @@index([expiresAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Impostazioni
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum TaxRegime {
+  FORFETTARIO
+  ORDINARIO
+}
+
+/// Parametri fiscali e di notifica, uno per utente.
+///
+/// Sono in tabella e non in costanti perché cambiano da soli col tempo: al
+/// sesto anno di attività l'imposta sostitutiva passa dal 5% al 15%, e deve
+/// bastare cambiare un numero da interfaccia.
+model Settings {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  taxRegime TaxRegime @default(FORFETTARIO)
+
+  /// Imposta sostitutiva: 500 = 5% (primi cinque anni), poi 1500 = 15%.
+  substituteTaxRateBp Int @default(500)
+
+  /// Coefficiente di redditività ATECO: 6700 = 67% (servizi informatici).
+  /// Il reddito imponibile è il fatturato per questo coefficiente.
+  profitabilityCoefficientBp Int @default(6700)
+
+  /// INPS gestione separata: 2607 = 26,07%.
+  inpsRateBp Int @default(2607)
+
+  /// Aliquota IVA proposta di default sui nuovi documenti: 2200 = 22%.
+  defaultVatRateBp Int @default(2200)
+
+  /// Valuta di riferimento dei report. Tutto ciò che è in altra valuta viene
+  /// convertito qui una volta sola, al momento in cui l'occorrenza matura.
+  baseCurrency String @default("EUR") @db.VarChar(3)
+
+  /// Fuso in cui vengono interpretate le date mostrate e calcolate le scadenze.
+  timezone String @default("Europe/Rome")
+
+  /// Quanti giorni prima avvisare di una scadenza. Più valori: [30, 7, 1].
+  reminderDaysBefore Int[] @default([30, 7, 1])
+
+  /// Quanti giorni prima avvisare che sta per chiudersi la finestra di disdetta.
+  /// Separati dai precedenti perché servono più anticipo: disdire richiede
+  /// tempo, pagare no.
+  cancellationReminderDaysBefore Int[] @default([60, 30, 15])
+
+  /// Riepilogo periodico via email.
+  digestEnabled   Boolean @default(true)
+  /// 1 = lunedì … 7 = domenica, come ISO-8601.
+  digestDayOfWeek Int     @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Anagrafiche
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Cliente a cui si riaddebitano spese e si emettono fatture.
+model Client {
+  id     String @id @default(cuid())
+  userId String
+
+  name         String
+  vatNumber    String?
+  taxCode      String?
+  sdiCode      String?
+  pecEmail     String?
+  email        String?
+  phone        String?
+  addressLine  String?
+  postalCode   String?
+  city         String?
+  province     String? @db.VarChar(2)
+  countryCode  String  @default("IT") @db.VarChar(2)
+  notes        String?
+  /// Disattivato invece che cancellato: le fatture degli anni passati devono
+  /// continuare a puntare a un cliente esistente.
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  documents Document[]
+
+  @@unique([userId, name])
+  @@index([userId, isActive])
+}
+
+/// Fornitore: chi emette la spesa.
+model Vendor {
+  id     String @id @default(cuid())
+  userId String
+
+  name         String
+  website      String?
+  supportEmail String?
+  /// Numero cliente o identificativo del contratto presso il fornitore.
+  /// Quando devi disdire, è la prima cosa che ti chiedono.
+  accountRef   String?
+  /// Pagina da cui si gestisce o si disdice l'abbonamento.
+  portalUrl    String?
+  vatNumber    String?
+  countryCode  String  @default("IT") @db.VarChar(2)
+  notes        String?
+  isActive     Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  documents Document[]
+
+  @@unique([userId, name])
+  @@index([userId, isActive])
+}
+
+enum CategoryScope {
+  EXPENSE
+  DOCUMENT
+  BOTH
+}
+
+model Category {
+  id     String @id @default(cuid())
+  userId String
+
+  name  String
+  scope CategoryScope @default(BOTH)
+  /// Colore esadecimale per grafici e badge, es. "#2563eb".
+  color String?       @db.VarChar(7)
+  /// Nome dell'icona lucide-react, risolto dal frontend.
+  icon  String?
+
+  /// Creata dal seed iniziale: l'interfaccia la può nascondere dalle
+  /// cancellazioni, per non lasciare l'utente senza categorie di base.
+  isSystem  Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses  Expense[]
+  documents Document[]
+
+  @@unique([userId, name])
+  @@index([userId, scope])
+}
+
+enum PaymentMethodType {
+  CARD
+  SEPA_DIRECT_DEBIT
+  BANK_TRANSFER
+  PAYPAL
+  CASH
+  OTHER
+}
+
+/// Strumento con cui la spesa viene pagata.
+///
+/// Non contiene dati di pagamento: solo quanto serve a riconoscerlo in un
+/// estratto conto e ad accorgersi che sta per scadere.
+model PaymentMethod {
+  id     String @id @default(cuid())
+  userId String
+
+  label String
+  type  PaymentMethodType
+
+  /// Ultime quattro cifre, a scopo di riconoscimento. Nessun PAN completo,
+  /// nessun CVV, nessun IBAN: qui non si conservano credenziali di pagamento.
+  last4 String? @db.VarChar(4)
+
+  /// Scadenza della carta. Una carta che scade blocca in silenzio tutti gli
+  /// abbonamenti che ci sono agganciati: è proprio il genere di cosa che
+  /// questa app deve ricordare per tempo.
+  expiryMonth Int?
+  expiryYear  Int?
+
+  notes    String?
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expenses Expense[]
+
+  @@unique([userId, label])
+  @@index([userId, isActive])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Spese ricorrenti
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum RecurrenceUnit {
+  ONE_OFF
+  DAY
+  WEEK
+  MONTH
+  YEAR
+}
+
+enum ExpenseStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+  ENDED
+}
+
+enum RebillMode {
+  /// Costo tuo, non riaddebitato.
+  NONE
+  /// Riaddebitato al costo, senza ricarico.
+  PASSTHROUGH
+  /// Riaddebitato con ricarico percentuale (`rebillMarkupBp`).
+  MARKUP
+  /// Riaddebitato a un importo concordato fisso (`rebillAmountCents`).
+  FIXED
+}
+
+/// Definizione di una spesa: il contratto, non il singolo pagamento.
+///
+/// Da qui il motore delle ricorrenze genera le `ExpenseOccurrence`, che sono
+/// le righe che compaiono nel calendario e nei report.
+model Expense {
+  id     String @id @default(cuid())
+  userId String
+
+  name        String
+  description String?
+
+  vendorId        String?
+  categoryId      String?
+  paymentMethodId String?
+  /// Cliente a cui la spesa è imputata. Serve al margine per cliente anche
+  /// quando non c'è riaddebito: un costo sostenuto per un cliente resta suo.
+  clientId        String?
+
+  // ── Importo ────────────────────────────────────────────────────────────────
+  //
+  // Imponibile, aliquota e totale sono tutti e tre persistiti. È ridondante di
+  // proposito: i report sommano una colonna invece di ricalcolare riga per
+  // riga, e soprattutto un domani in cui cambiassimo un arrotondamento nel
+  // codice i totali storici non si muoverebbero da soli.
+  //
+  // In forfettario l'IVA non è detraibile, quindi il costo vero è `grossCents`.
+  // `netCents` resta come dato documentale, e serve se un giorno si passa al
+  // regime ordinario.
+  netCents   Int
+  vatRateBp  Int    @default(2200)
+  grossCents Int
+  currency   String @default("EUR") @db.VarChar(3)
+
+  // ── Ricorrenza ─────────────────────────────────────────────────────────────
+  //
+  // L'occorrenza numero n si calcola sempre come `startDate + n × intervallo`,
+  // mai sommando un intervallo all'occorrenza precedente: sommare a catena fa
+  // scivolare il 31 gennaio su 28 febbraio e poi su 28 marzo, mentre la data
+  // giusta è il 31 marzo.
+  recurrenceUnit     RecurrenceUnit @default(MONTH)
+  recurrenceInterval Int            @default(1)
+  startDate          DateTime       @db.Date
+  /// Fine prevista del contratto. Oltre questa data non si generano occorrenze.
+  endDate            DateTime?      @db.Date
+
+  status ExpenseStatus @default(ACTIVE)
+
+  /// Si rinnova da sé salvo disdetta. Determina se il cron può marcare pagata
+  /// un'occorrenza scaduta senza chiedere.
+  autoRenew Boolean @default(true)
+
+  /// Preavviso di disdetta in giorni. La finestra utile si chiude
+  /// `cancellationNoticeDays` prima del rinnovo, ed è la scadenza che conta
+  /// davvero: dopo, si paga un altro anno.
+  cancellationNoticeDays Int?
+  /// Disdetta già inviata, per fermare i promemoria senza chiudere la spesa.
+  cancelledAt            DateTime?
+
+  // ── Riaddebito ─────────────────────────────────────────────────────────────
+  rebillMode        RebillMode @default(NONE)
+  /// Ricarico in basis point quando `rebillMode = MARKUP`: 2000 = +20%.
+  rebillMarkupBp    Int?
+  /// Importo concordato quando `rebillMode = FIXED`, nella valuta della spesa.
+  rebillAmountCents Int?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendor        Vendor?             @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  category      Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  paymentMethod PaymentMethod?      @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  client        Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  occurrences   ExpenseOccurrence[]
+
+  @@index([userId, status])
+  @@index([userId, clientId])
+  @@index([userId, vendorId])
+  @@index([userId, categoryId])
+}
+
+enum OccurrenceStatus {
+  /// Futura, non ancora scaduta.
+  PLANNED
+  /// Pagata.
+  PAID
+  /// Saltata consapevolmente (mese di sospensione, credito promozionale).
+  SKIPPED
+  /// Annullata perché la spesa è stata disdetta prima della scadenza.
+  CANCELLED
+}
+
+/// Singola scadenza generata da una spesa.
+///
+/// È la tabella su cui poggiano calendario, previsioni, promemoria e report.
+model ExpenseOccurrence {
+  id        String @id @default(cuid())
+  userId    String
+  expenseId String
+
+  /// Giorno in cui l'importo è dovuto.
+  dueDate     DateTime  @db.Date
+  /// Periodo coperto dal pagamento, per attribuire il costo al mese giusto
+  /// anche quando si paga un anno in anticipo.
+  periodStart DateTime? @db.Date
+  periodEnd   DateTime? @db.Date
+
+  // Copiati dalla spesa al momento della generazione, non letti da lì a runtime:
+  // se il fornitore aumenta il prezzo, le occorrenze già maturate devono
+  // continuare a mostrare quanto è stato davvero pagato.
+  netCents   Int
+  vatRateBp  Int
+  grossCents Int
+  currency   String @default("EUR") @db.VarChar(3)
+
+  /// Cambio verso la valuta base, congelato qui alla maturazione. Ricalcolarlo
+  /// ogni volta farebbe cambiare i report storici tutti i giorni.
+  /// `Decimal` e non intero perché ci sono valute con cambi nell'ordine delle
+  /// decine di migliaia, che scalate a intero uscirebbero dai 32 bit.
+  fxRate         Decimal? @db.Decimal(20, 10)
+  /// Importo convertito in valuta base. È questo il numero che sommano i
+  /// report: il cambio sopra resta come tracciabilità.
+  baseGrossCents Int
+
+  status OccurrenceStatus @default(PLANNED)
+  paidAt DateTime?
+
+  /// Il cron marca `PAID` le occorrenze scadute con rinnovo automatico, ma
+  /// lascia questo campo a null: la dashboard le mostra come «da confermare».
+  /// È il meccanismo con cui ci si accorge di un aumento di prezzo.
+  confirmedAt DateTime?
+
+  /// Fattura o ricevuta corrispondente, quando è stata archiviata.
+  documentId String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expense  Expense   @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  reminderLogs ReminderLog[]
+
+  /// L'idempotenza del cron sta qui, non nel codice: rigenerare le occorrenze
+  /// non può duplicarle nemmeno se il job parte due volte in parallelo.
+  @@unique([expenseId, dueDate])
+  @@index([userId, dueDate])
+  @@index([userId, status, dueDate])
+}
+
+/// Cambi giornalieri, dalla BCE tramite Frankfurter.
+model FxRate {
+  id    String   @id @default(cuid())
+  base  String   @db.VarChar(3)
+  quote String   @db.VarChar(3)
+  date  DateTime @db.Date
+  rate  Decimal  @db.Decimal(20, 10)
+  /// Da dove viene il tasso: "frankfurter" o "manual" per gli override.
+  source String  @default("frankfurter")
+
+  createdAt DateTime @default(now())
+
+  @@unique([base, quote, date])
+  @@index([date])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Archivio documenti
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum DocumentKind {
+  INVOICE_ACTIVE
+  INVOICE_PASSIVE
+  F24
+  CONTRACT
+  COMMUNICATION
+  RECEIPT
+  OTHER
+}
+
+model Document {
+  id     String @id @default(cuid())
+  userId String
+
+  kind  DocumentKind
+  title String
+  /// Numero del documento come lo ha emesso chi lo ha emesso.
+  number String?
+
+  issueDate   DateTime  @db.Date
+  dueDate     DateTime? @db.Date
+  /// Periodo di competenza, che non coincide con la data di emissione: una
+  /// fattura di gennaio può competere a dicembre.
+  periodStart DateTime? @db.Date
+  periodEnd   DateTime? @db.Date
+  paidAt      DateTime?
+
+  clientId   String?
+  vendorId   String?
+  categoryId String?
+
+  /// Importi facoltativi: un contratto o una comunicazione non ne hanno.
+  netCents   Int?
+  vatRateBp  Int?
+  vatCents   Int?
+  grossCents Int?
+  currency   String @default("EUR") @db.VarChar(3)
+
+  // ── File su storage S3-compatible ──────────────────────────────────────────
+  //
+  // Il file non sta mai nel database né sul filesystem del container, che su
+  // Railway è effimero: qui c'è solo la chiave con cui rileggerlo.
+  storageKey     String  @unique
+  fileName       String
+  mimeType       String
+  sizeBytes      Int
+  /// SHA-256 del contenuto, per accorgersi di un caricamento doppio.
+  /// Indicizzato ma non unico: lo stesso PDF può legittimamente servire due
+  /// volte, e bloccarlo sarebbe più fastidioso che utile. L'interfaccia avvisa.
+  checksumSha256 String?
+
+  tags  String[] @default([])
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  client      Client?             @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  vendor      Vendor?             @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  category    Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  occurrences ExpenseOccurrence[]
+
+  /// Colonna `tsvector` generata da Postgres a partire da titolo, numero, note
+  /// e tag. Prisma non sa esprimerla, quindi è creata in SQL nella migrazione
+  /// e dichiarata qui solo perché lo schema resti allineato al database.
+  /// La ricerca passa da `$queryRaw`, non dal client generato.
+  searchVector Unsupported("tsvector")?
+
+  @@index([userId, kind, issueDate])
+  @@index([userId, issueDate])
+  @@index([userId, clientId])
+  @@index([userId, vendorId])
+  @@index([userId, checksumSha256])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Notifiche e promemoria
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum ReminderKind {
+  /// Una spesa sta per scadere.
+  EXPENSE_DUE
+  /// Si sta chiudendo la finestra di disdetta.
+  CANCELLATION_WINDOW
+  /// La carta usata per pagare sta per scadere.
+  CARD_EXPIRING
+  /// Un documento (tipicamente un F24) sta per scadere.
+  DOCUMENT_DUE
+  /// Riepilogo periodico.
+  DIGEST
+}
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+}
+
+/// Registro di ciò che è già stato inviato.
+///
+/// Esiste per una ragione sola: non mandare due volte la stessa email. La
+/// garanzia non è nel codice del job ma nel vincolo di unicità su `dedupeKey`,
+/// perché un job può sempre essere rieseguito, andare in timeout a metà o
+/// partire in due copie.
+model ReminderLog {
+  id     String @id @default(cuid())
+  userId String
+
+  kind    ReminderKind
+  channel NotificationChannel
+
+  /// Chiave deterministica del singolo invio, es.
+  /// "EXPENSE_DUE:<occurrenceId>:7:EMAIL". Se esiste già, non si invia.
+  dedupeKey String @unique
+
+  occurrenceId String?
+
+  /// Giorno a cui l'avviso si riferisce.
+  referenceDate DateTime @db.Date
+  sentAt        DateTime @default(now())
+
+  /// Esito: un invio fallito resta registrato, così non lo si ritenta in loop.
+  succeeded    Boolean @default(true)
+  errorMessage String?
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  occurrence ExpenseOccurrence? @relation(fields: [occurrenceId], references: [id], onDelete: Cascade)
+
+  @@index([userId, kind, referenceDate])
+  @@index([occurrenceId])
+}
+
+/// Notifica mostrata dentro l'applicazione.
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+
+  kind  ReminderKind
+  title String
+  body  String
+
+  /// Riferimento generico all'entità che ha originato la notifica, per il link
+  /// «vai a». Non è una foreign key perché può puntare a tabelle diverse.
+  entityType String?
+  entityId   String?
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}

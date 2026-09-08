@@ -39,6 +39,10 @@ Thumbs.db
 # Prisma
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
+# Client generato: è un artefatto, derivato interamente da schema.prisma.
+# Committarlo significherebbe rileggerlo a ogni diff e poterlo trovare
+# disallineato dallo schema. Lo rigenera `postinstall`.
+apps/api/src/generated/
 
 # Netlify
 .netlify/

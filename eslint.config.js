@@ -10,6 +10,9 @@ export default tseslint.config(
       '**/coverage/**',
       '**/node_modules/**',
       'apps/api/prisma/migrations/**',
+      // Client Prisma generato: non è codice che scriviamo noi e non ha senso
+      // sottoporlo a regole di stile.
+      'apps/api/src/generated/**',
     ],
   },
 
