@@ -48,5 +48,12 @@ export default tseslint.config(
     extends: [tseslint.configs.disableTypeChecked],
   },
 
+  // Gli script di popolamento non hanno un logger: il terminale è la loro unica
+  // interfaccia, e la password generata dal seed va stampata da qualche parte.
+  {
+    files: ['apps/api/prisma/**/*.ts'],
+    rules: { 'no-console': 'off' },
+  },
+
   prettier,
 );
