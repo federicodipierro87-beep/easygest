@@ -11,7 +11,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | ---- | ------------------------------------------------------------------- | ------------- |
 | 0    | Scaffolding monorepo, config, CI, Docker locale, health check       | ✅ Completata |
 | 0.5  | Deploy anticipato: Netlify + Railway + Postgres gestito             | ✅ Completata |
-| 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | ⬜ Da fare    |
+| 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | 🟡 In corso   |
 | 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ⬜ Da fare    |
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ⬜ Da fare    |
 | 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ⬜ Da fare    |
@@ -87,9 +87,16 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **Configurazione validata da Zod in un unico punto** (`config/env.ts`). Il
   processo esce con codice 78 (`EX_CONFIG`) e un messaggio leggibile se una
   variabile manca o è malformata, invece di propagare `undefined`.
-- **`/health` non interroga il database.** Se Postgres ha un singhiozzo,
-  riavviare l'API trasforma un disservizio breve in uno lungo. La readiness
-  probe, che invece verifica le dipendenze, arriva con Prisma nella Fase 1.
+- **`/health` non interroga il database, `/ready` sì.** Sono due domande diverse
+  e chi le pone reagisce in modo opposto: a un fallimento di liveness si riavvia
+  il processo, a uno di readiness ci si limita a non mandarci traffico. Se
+  Postgres ha un singhiozzo, riavviare l'API trasforma un disservizio breve in
+  uno lungo.
+- **L'healthcheck di Railway punta a `/ready`.** Al deploy la domanda è «questa
+  release è in grado di servire?»: con `/health` un deploy con `DATABASE_URL`
+  sbagliata risponderebbe 200 — non tocca il database — e andrebbe in produzione
+  a fallire ogni richiesta vera. Fallendo su `/ready` resta su il deploy
+  precedente.
 - **CORS come lista esplicita di URL**, non wildcard: il refresh token viaggerà
   in un cookie httpOnly e le richieste con credenziali vietano `*` per
   specifica.
@@ -98,6 +105,38 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **L'error handler non assume che l'errore sia un `Error`**: in JavaScript si
   può lanciare qualsiasi valore, e una libreria che facesse `throw 'boom'`
   farebbe esplodere l'handler stesso.
+
+### Dati e persistenza
+
+- **Prisma 7**, che rispetto alla 6 cambia tre cose non negoziabili: l'URL non
+  sta più in `schema.prisma` ma in `prisma.config.ts`, il file `.env` non viene
+  più caricato da solo (serve `dotenv/config` esplicito), e il client richiede un
+  **driver adapter** — qui `@prisma/adapter-pg`, cioè un pool `pg` vero.
+- **Il pool è configurato a mano** (`max` da env, `statement_timeout` 30s,
+  `lock_timeout` 10s). Railway limita le connessioni del piano gestito e API e
+  cron attingono allo stesso Postgres: esaurire il pool si manifesta come
+  un'applicazione che si blocca senza errori.
+- **`prisma.config.ts` legge `process.env.DATABASE_URL` e non l'helper `env()`**,
+  che solleverebbe un'eccezione al solo caricamento del file: `prisma generate`
+  gira anche in `postinstall`, dove il database non serve e spesso non c'è.
+- **Il client generato finisce in `src/generated/` ed è escluso da git**, da
+  Prettier e da ESLint. È un artefatto: si rigenera in `postinstall` e in `build`.
+- **Il tipo del client si deriva con `ReturnType`, non si scrive a mano.**
+  `PrismaClient` senza parametri perde la configurazione dei log e con essa la
+  conoscenza di quali eventi esistono; il sintomo è un `$on('query')` che non
+  compila lamentando `never`, senza dire dove sia il problema.
+- **Tutti i log di Prisma escono come eventi, nessuno su stdout.** Quello che
+  Prisma scrive da sé è testo libero e non JSON di pino, quindi su Railway
+  finirebbe fuori dall'indice dei log proprio quando lo stai cercando. Le query
+  si registrano solo in sviluppo: il loro testo contiene i dati dei clienti.
+- **Ricerca full-text con colonna `tsvector` generata e indice GIN**, più indici
+  trigram (`pg_trgm`) su titolo e numero per le ricerche parziali o con refuso.
+  I tag sono fuori dal `tsvector` e hanno un GIN loro: `array_to_string` è STABLE
+  e non IMMUTABLE, quindi Postgres rifiuta l'espressione generata — ma è anche
+  giusto così, un tag è un'etichetta esatta, non prosa da lemmatizzare.
+- **L'idempotenza sta nei vincoli, non nel codice del job**: `@@unique` su
+  `(expenseId, dueDate)` per le occorrenze e su `dedupeKey` per i promemoria. Un
+  cron che parte due volte è un caso normale, non un incidente.
 
 ### Frontend
 
@@ -111,7 +150,15 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 
 ### Infrastruttura locale
 
-- **Postgres sulla porta 5433**, per non collidere con un'installazione locale.
+- **Postgres sulla porta 55432**, volutamente alta e improbabile. La 5432 era
+  occupata da un container di un altro progetto e la 5433 da un Postgres nativo
+  di Windows — che però ascoltava _insieme_ al container, senza che nessuno dei
+  due segnalasse un conflitto. Il sintomo era un'autenticazione fallita contro un
+  server che sembrava il proprio e non lo era: sono servite ore per trovarlo, e
+  `netstat -ano` che mostra due PID sulla stessa porta è l'unico modo per vederlo.
+- **Il volume di Postgres è montato su `/var/lib/postgresql`**, non più su
+  `.../data`: dalla major 18 l'immagine ufficiale vuole così, e col percorso
+  vecchio il container entra in loop di riavvio.
 - **MinIO al posto di R2 in sviluppo**: è S3-compatible, quindi il codice
   applicativo è identico e si sviluppa senza account esterni e senza rete.
 - **Il cron sarà un secondo servizio Railway sulla stessa immagine dell'API**,
@@ -184,8 +231,18 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   perdere tempo se non lo si sa.
 - **`exactOptionalPropertyTypes` è disattivato.** Con Prisma e Zod produce più
   attrito che valore; da rivalutare a schema stabile.
-- La CI non ha ancora un database: verrà aggiunto un service Postgres nel
-  workflow quando arriveranno i test di integrazione, nella Fase 1.
+- **La CI ha un Postgres, ma non ci sono ancora test di integrazione.** Per ora
+  serve solo ad applicare le migrazioni da zero: è l'unico posto dove il SQL
+  scritto a mano nella migrazione iniziale viene provato su un database vuoto.
+- **Nuove advisory dev-only introdotte dalla CLI di Prisma**: `deepmerge-ts`
+  (dentro `@prisma/config`) e `mysql2` — la CLI impacchetta tutti i driver, e
+  quello MySQL non viene mai caricato dato che il provider è PostgreSQL. Entrambe
+  toccano solo il tempo di build; la «fix» proposta da npm è un downgrade a
+  Prisma 6.
+- **`npm install -w <ws> -D <pkg>` può fallire con
+  `Cannot read properties of null (reading 'edgesOut')`**, un bug di arborist.
+  Si aggira scrivendo la dipendenza a mano nel `package.json` e lanciando
+  `npm install` dalla radice.
 - **La CLI Netlify rileva il monorepo e chiede da terminale quale workspace
   usare**, bloccando qualunque comando non interattivo. Va sempre passato
   `--filter @easygest/web`. Riguarda solo la CLI: le build da Git leggono
@@ -212,3 +269,11 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **Il volume Postgres locale va ricreato** dopo il passaggio da 17 a 18:
   Postgres non avvia una data directory di una major precedente. Non essendoci
   ancora schema né dati, basta `npm run infra:reset`.
+- **Il cookie di refresh sarà un cookie di terze parti**, e va deciso prima di
+  scrivere l'autenticazione. `easygest.netlify.app` e
+  `api-production-d716.up.railway.app` sono domini registrabili diversi, quindi
+  il cookie richiede `SameSite=None; Secure` e cade sotto le restrizioni dei
+  browser sui cookie cross-site — Safari lo blocca già oggi. Le due soluzioni
+  vere sono un dominio proprio (`easygest.it` e `api.easygest.it`, che rende il
+  cookie first-party) oppure una rewrite di Netlify che inoltri `/api/*` a
+  Railway facendo apparire l'API sullo stesso host. Da decidere in Fase 1.
