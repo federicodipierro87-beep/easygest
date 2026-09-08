@@ -5,6 +5,22 @@ import type { FastifyInstance } from 'fastify';
 
 import type { Env } from '../config/env';
 
+/**
+ * L'attesa residua in italiano.
+ *
+ * `context.after` la porta già pronta, ma formattata in inglese («15 minutes»):
+ * finiva in mezzo a una frase italiana e poi tale e quale sotto il campo
+ * password. Da `ttl`, che sono millisecondi, la si riscrive per intero.
+ */
+function formatWait(milliseconds: number): string {
+  const seconds = Math.ceil(milliseconds / 1000);
+  if (seconds <= 60) return 'un minuto';
+  const minutes = Math.ceil(seconds / 60);
+  if (minutes < 60) return `${String(minutes)} minuti`;
+  const hours = Math.ceil(minutes / 60);
+  return hours === 1 ? "un'ora" : `${String(hours)} ore`;
+}
+
 export async function registerSecurity(app: FastifyInstance, env: Env): Promise<void> {
   await app.register(helmet, {
     // L'API restituisce solo JSON e non serve pagine: la CSP di default di
@@ -44,7 +60,9 @@ export async function registerSecurity(app: FastifyInstance, env: Env): Promise<
      * `code` da qui.
      */
     errorResponseBuilder: (_request, context) => {
-      const error = new Error(`Troppi tentativi. Riprova fra ${context.after}.`) as Error & {
+      const error = new Error(
+        `Troppi tentativi. Riprova fra ${formatWait(context.ttl)}.`,
+      ) as Error & {
         statusCode: number;
         code: string;
       };

@@ -142,6 +142,10 @@ describe('limite di tentativi sul login', () => {
 
     const body = blocked.json<{ error: { code: string; message: string } }>();
     expect(body.error.code).toBe('RATE_LIMITED');
-    expect(body.error.message).toMatch(/Troppi tentativi/);
+    // Il messaggio finisce sotto il campo password della pagina di login, così
+    // com'è: l'attesa che il plugin formatta in inglese («15 minutes») va
+    // riscritta, altrimenti la frase esce mezza in una lingua e mezza in
+    // un'altra.
+    expect(body.error.message).toBe('Troppi tentativi. Riprova fra 15 minuti.');
   });
 });
