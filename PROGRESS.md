@@ -105,6 +105,76 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **L'error handler non assume che l'errore sia un `Error`**: in JavaScript si
   può lanciare qualsiasi valore, e una libreria che facesse `throw 'boom'`
   farebbe esplodere l'handler stesso.
+- **Gli errori di validazione escono con l'elenco completo dei campi sbagliati**,
+  non con il primo: un form che si corregge un campo alla volta è la ragione per
+  cui `parseBody` restituisce tutti gli issue di Zod.
+- **Il 429 del rate limit ha un `code` suo, `RATE_LIMITED`.** Il messaggio
+  predefinito di `@fastify/rate-limit` è in inglese e senza codice: usciva come
+  `INTERNAL_ERROR`, cioè indistinguibile da un guasto del server proprio quando
+  la risposta giusta è «aspetta e riprova». Attenzione al contratto di
+  `errorResponseBuilder`: il valore che restituisce viene **lanciato**, quindi
+  deve essere un `Error` annotato con `statusCode`, non l'involucro
+  `{ error: ... }` della risposta. Restituire un oggetto semplice degrada il 429
+  a 500, che è peggio del problema di partenza. Bloccato da un test in
+  `app.test.ts`.
+
+### Autenticazione
+
+- **Access token JWT di breve durata (15 min) + refresh token opaco in cookie
+  httpOnly (30 giorni).** L'access token non è revocabile: la sua durata è la
+  finestra in cui uno rubato resta utilizzabile. Il refresh invece è una riga di
+  database, quindi si può invalidare davvero.
+- **`jose` invece di `jsonwebtoken`**, e la verifica passa un elenco esplicito di
+  algoritmi (`algorithms: ['HS256']`) oltre a `issuer` e `audience`. Senza quella
+  lista un token con `alg: none` verrebbe accettato: c'è un test apposta.
+- **I refresh token in database sono solo hash SHA-256.** Sono valori casuali da
+  32 byte, non password: non serve bcrypt (nessun attacco a dizionario ha senso
+  su un valore casuale), serve che una lettura del database non consegni sessioni
+  utilizzabili. Il valore in chiaro esiste solo nel cookie.
+- **Rotazione con rilevamento del riuso, per famiglia.** Ogni refresh consuma il
+  token e ne emette uno nuovo con lo stesso `familyId`. Se un token già consumato
+  viene ripresentato, l'unica spiegazione è che qualcuno ne ha una copia: viene
+  revocata **l'intera famiglia**, buttando fuori sia il ladro sia il legittimo
+  proprietario. Un token semplicemente scaduto invece non revoca niente, altrimenti
+  basterebbe tornare su una scheda del browser lasciata aperta per perdere la
+  sessione.
+- **Email sconosciuta e password sbagliata danno lo stesso errore e impiegano lo
+  stesso tempo.** Rispondere «utente inesistente» significa regalare un
+  verificatore di indirizzi; rispondere identicamente ma in un decimo del tempo
+  significa regalarlo lo stesso, misurando. Da qui il confronto bcrypt contro un
+  hash fittizio quando l'utente non esiste.
+- **`authenticate` rilegge l'utente dal database a ogni richiesta**, invece di
+  fidarsi dei claim del token. Costa una query, ma è ciò che rende immediata la
+  disattivazione di un account: altrimenti resterebbe operativo fino alla
+  scadenza dell'access token.
+- **Limite di 5 tentativi di login ogni 15 minuti**, separato dal tetto generale
+  di 300/minuto. Il tetto generale protegge dai loop del frontend, questo dal
+  provare password.
+- **Il limite di bcrypt è di 72 _byte_, non 72 caratteri**, e oltre quella soglia
+  tronca in silenzio — una password lunga di soli caratteri accentati verrebbe
+  accettata e poi mutilata. La validazione conta i byte UTF-8, con un test sul
+  confine esatto.
+- **`packages/shared` non ha accesso né a Node né al DOM** (`"types": []`), quindi
+  il conteggio dei byte è scritto a mano invece di usare `TextEncoder`. È la
+  frontiera che garantisce che quel pacchetto compili identico sui due lati.
+- **`REGISTRATION_ENABLED` è un enum `'true' | 'false'`, non un booleano
+  convertito.** `Boolean('false')` vale `true`: una conversione ingenua aprirebbe
+  le registrazioni proprio scrivendo che si vogliono chiuse. Il default è
+  `false` e un valore ambiguo fa fallire l'avvio.
+- **Il cookie di refresh ha `Path=/`, non `/auth/refresh`.** Sembra un
+  allargamento gratuito ed è invece obbligatorio: il browser confronta `Path` con
+  l'URL che vede lui (`/api/auth/refresh`), non con quello riscritto dal proxy
+  Netlify. Con un path più stretto il cookie non verrebbe mai inviato. In
+  produzione il nome prende il prefisso `__Host-`, che impone comunque `Secure` e
+  `Path=/`.
+- **Il `changePassword` revoca tutte le famiglie tranne quella corrente**: cambiare
+  password deve buttare fuori gli altri dispositivi, non anche quello da cui la
+  si sta cambiando.
+- **I test del servizio girano contro un PostgreSQL vero.** La rotazione dei
+  token vive nei vincoli di unicità e nelle transizioni di stato di una riga: con
+  un finto client Prisma il test verificherebbe soltanto sé stesso. Ogni test crea
+  un utente con email casuale e lo cancella, così la suite può girare sul database
+  di sviluppo senza portarsi via i dati esistenti.
 
 ### Dati e persistenza
 
@@ -268,9 +338,11 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   perdere tempo se non lo si sa.
 - **`exactOptionalPropertyTypes` è disattivato.** Con Prisma e Zod produce più
   attrito che valore; da rivalutare a schema stabile.
-- **La CI ha un Postgres, ma non ci sono ancora test di integrazione.** Per ora
-  serve solo ad applicare le migrazioni da zero: è l'unico posto dove il SQL
-  scritto a mano nella migrazione iniziale viene provato su un database vuoto.
+- **I test hanno bisogno di un database in esecuzione.** Da quando esistono i test
+  di integrazione sull'autenticazione, `npm test` fallisce se Postgres non è su:
+  in locale lo avvia `npm run infra:up` e `vitest.setup.ts` legge `apps/api/.env`,
+  in CI lo fornisce il servizio `postgres` del workflow. Il setup non usa
+  `override`, così le variabili del job in CI vincono sul file.
 - **Nuove advisory dev-only introdotte dalla CLI di Prisma**: `deepmerge-ts`
   (dentro `@prisma/config`) e `mysql2` — la CLI impacchetta tutti i driver, e
   quello MySQL non viene mai caricato dato che il provider è PostgreSQL. Entrambe
@@ -311,8 +383,16 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   Postgres non avvia una data directory di una major precedente. Non essendoci
   ancora schema né dati, basta `npm run infra:reset`.
 - **L'API resta raggiungibile anche al suo URL Railway diretto**, oltre che
-  attraverso il proxy. Non è un problema — l'autorizzazione la farà il token, non
-  l'irraggiungibilità — ma va ricordato quando si valuterà il rate limiting: le
-  richieste che passano dal proxy arrivano tutte dagli IP di Netlify, quindi il
-  conteggio per IP le tratterebbe come un unico client. Andrà usato
-  `X-Forwarded-For`, con `trustProxy` configurato di conseguenza.
+  attraverso il proxy. Non è un problema di autorizzazione — quella la fa il
+  token — ma **lo è per il rate limiting sul login**, ed è il debito più concreto
+  aperto oggi. Le richieste che arrivano dal proxy hanno tutte l'IP di Netlify:
+  il conteggio per IP le tratta come un unico client, quindi cinque tentativi
+  falliti da chiunque bloccherebbero il login a tutti. `trustProxy` è già attivo
+  in produzione, ma la catena `X-Forwarded-For` passa da Netlify _e_ dal proxy di
+  Railway: va verificato sul campo quale IP arriva davvero in `req.ip` prima di
+  fidarsi del limite. Con un solo utente reale la conseguenza pratica è nulla,
+  ma il limite va provato in produzione, non dedotto.
+- **Il contatore del rate limit sta in memoria**, quindi si azzera a ogni riavvio
+  del processo — cioè a ogni deploy, e in locale a ogni ricarica di `tsx watch`.
+  Per un limite anti-forza-bruta su un'applicazione a un solo utente va bene;
+  diventerebbe un problema con più repliche, dove servirebbe un Redis condiviso.
