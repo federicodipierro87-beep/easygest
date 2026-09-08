@@ -49,7 +49,7 @@ git clone <url-del-repo>
 cd easygest
 npm install
 
-# Postgres su 5433 e MinIO su 9000 (console su 9001)
+# Postgres su 55432 e MinIO su 9000 (console su 9001)
 npm run infra:up
 
 cp apps/api/.env.example apps/api/.env
@@ -62,8 +62,10 @@ npm run dev
 - Frontend: <http://localhost:5173>
 - Console MinIO: <http://localhost:9001> — utente `easygest`, password `easygest-dev-secret`
 
-Postgres è esposto sulla porta **5433** e non sulla 5432, così non entra in
-conflitto con un'eventuale installazione già presente sulla macchina.
+Postgres è esposto sulla porta **55432**, volutamente alta e improbabile: su
+Windows un Postgres nativo e un container possono ascoltare sulla stessa porta
+senza che nessuno dei due segnali un errore, e il risultato è un
+«autenticazione fallita» contro un server che sembra il proprio e non lo è.
 
 ## Comandi
 

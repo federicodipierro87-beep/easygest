@@ -12,11 +12,19 @@ services:
       POSTGRES_PASSWORD: easygest
       POSTGRES_DB: easygest
     ports:
-      # 5433 e non 5432: se hai già un Postgres installato sulla macchina
-      # non devi spegnerlo per lavorare al progetto.
-      - '5433:5432'
+      # Non 5432 né 5433: su Windows un Postgres nativo e Docker possono
+      # mettersi in ascolto sulla stessa porta senza che nessuno dei due dia
+      # errore, e le connessioni finiscono in modo stabile a chi ha vinto il
+      # bind. Si manifesta come «autenticazione fallita» contro un server che
+      # sembra il proprio e non lo è: mezz'ora persa a cercare la password
+      # sbagliata. Una porta alta e improbabile toglie il problema di mezzo.
+      - '55432:5432'
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # Dalla 18 l'immagine ufficiale vuole il mount su `/var/lib/postgresql`,
+      # non più su `/var/lib/postgresql/data`: i dati finiscono in una
+      # sottocartella per major, così `pg_upgrade --link` non deve attraversare
+      # un mount point. Con il percorso vecchio il container non parte affatto.
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U easygest -d easygest']
       interval: 5s
