@@ -14,6 +14,28 @@
   # e TypeScript sono lì dentro.
   NPM_FLAGS = "--include=dev"
 
+# L'API viene inoltrata a Railway invece di essere chiamata direttamente dal
+# browser. Serve a rendere il cookie di refresh **first-party**: il frontend e
+# l'API stanno su due domini registrabili diversi, quindi una chiamata diretta
+# richiederebbe `SameSite=None`, che Safari blocca già oggi e Chrome restringe
+# sempre di più. Passando da qui l'API vive sullo stesso host del sito, il
+# cookie è di prima parte e il CORS non entra nemmeno in gioco.
+#
+# `status = 200` e non 301: è un proxy lato server, non un redirect. Il browser
+# non vede mai l'URL di Railway, quindi non lo tratta come origine diversa.
+#
+# Deve stare **prima** della regola SPA: Netlify applica la prima che combacia,
+# e `/*` intercetterebbe anche `/api/...` restituendo index.html — cioè HTML al
+# posto di JSON, con un errore di parsing che non dice niente sulla causa.
+#
+# L'URL è scritto per esteso perché netlify.toml non interpola le variabili
+# d'ambiente. È l'unico punto in cui compare: il frontend chiama `/api`.
+[[redirects]]
+  from = "/api/*"
+  to = "https://api-production-d716.up.railway.app/:splat"
+  status = 200
+  force = true
+
 # L'applicazione è una SPA: qualunque URL deve servire index.html, altrimenti
 # ricaricare la pagina su /spese/123 restituisce 404 invece della rotta React.
 [[redirects]]

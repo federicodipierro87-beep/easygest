@@ -17,6 +17,12 @@ function required(name: string, value: string | undefined): string {
 }
 
 export const env = {
-  /** URL base dell'API, senza slash finale. */
+  /**
+   * Prefisso delle chiamate all'API, senza slash finale.
+   *
+   * Normalmente è il percorso relativo `/api`, inoltrato al backend dal dev
+   * server di Vite in sviluppo e da Netlify in produzione. Relativo e non
+   * assoluto perché il cookie di sessione sia first-party.
+   */
   apiUrl: required('VITE_API_URL', import.meta.env.VITE_API_URL).replace(/\/+$/, ''),
 } as const;

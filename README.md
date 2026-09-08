@@ -124,11 +124,25 @@ CLI aggiornata: il perché è spiegato in cima allo script.
 
 Le variabili d'ambiente vanno invece impostate sulle rispettive piattaforme.
 Sono documentate una per una, con significato e valore di produzione, in
-`apps/api/.env.example` e `apps/web/.env.example`. Le due che collegano fra loro
-i due deploy:
+`apps/api/.env.example` e `apps/web/.env.example`.
 
-- su Railway, `CORS_ORIGINS` deve contenere l'URL Netlify esatto;
-- su Netlify, `VITE_API_URL` deve contenere l'URL Railway.
+### Il browser non chiama mai Railway
+
+Il frontend chiama `/api/...`, cioè il proprio stesso host: una rewrite in
+`netlify.toml` inoltra quelle richieste a Railway lato server. Serve a rendere
+il cookie di refresh **first-party** — Netlify e Railway stanno su due domini
+registrabili diversi, e una chiamata diretta richiederebbe `SameSite=None`, che
+Safari blocca già oggi.
+
+Ne discendono tre cose che è facile dimenticare:
+
+- l'URL di Railway compare **solo** in `netlify.toml`. Se cambia, si cambia lì;
+- `VITE_API_URL` vale `/api` ovunque, in locale e in produzione. In sviluppo è
+  il proxy del dev server di Vite a inoltrare, verso `localhost:3001`;
+- `CORS_ORIGINS` non è più sulla strada del login, perché nessuna richiesta è
+  più cross-origin. Resta impostata perché l'API è comunque raggiungibile al suo
+  URL Railway, e senza una lista esplicita accetterebbe chiamate da qualunque
+  pagina.
 
 `VITE_API_URL` viene sostituita **a build time**: cambiarla richiede un nuovo
 deploy del frontend, non basta riavviare. Per lo stesso motivo non può

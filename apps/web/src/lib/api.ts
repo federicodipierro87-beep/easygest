@@ -36,9 +36,13 @@ function isApiErrorBody(value: unknown): value is ApiErrorBody {
 /**
  * Chiamata all'API.
  *
- * `credentials: 'include'` è obbligatorio perché il refresh token vive in un
- * cookie httpOnly su un dominio diverso da quello del frontend, ed è il motivo
- * per cui l'API non può usare un'origine CORS wildcard.
+ * Le richieste partono verso un percorso relativo (`/api/...`), che il dev
+ * server di Vite in sviluppo e Netlify in produzione inoltrano al backend: per
+ * il browser sono richieste same-origin, e il cookie di sessione è first-party.
+ *
+ * `credentials: 'include'` sarebbe superfluo nel caso same-origin, dove i cookie
+ * partono comunque. Resta esplicito perché continui a funzionare se
+ * `VITE_API_URL` viene puntata a un backend su un altro host.
  */
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   let response: Response;
@@ -53,13 +57,13 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
       },
     });
   } catch {
-    // Rete irraggiungibile, DNS, oppure preflight CORS rifiutato: il browser
-    // non espone il motivo, quindi il messaggio deve suggerire dove guardare.
+    // Il browser non espone il motivo di un fallimento di rete, quindi il
+    // messaggio deve dire dove guardare invece di limitarsi a «failed to fetch».
     throw new ApiError(
       0,
       'NETWORK_ERROR',
-      `Impossibile raggiungere l'API su ${env.apiUrl}. Verifica che il backend sia ` +
-        `avviato e che l'origine di questo sito sia elencata in CORS_ORIGINS.`,
+      `Impossibile raggiungere l'API su ${env.apiUrl}. In locale verifica che il ` +
+        `backend sia avviato sulla porta attesa dal proxy di Vite.`,
     );
   }
 
