@@ -14,7 +14,7 @@
  * Fuori da questo file, perché non esprimibile in IaC: il dominio pubblico
  * generato `*.up.railway.app`, creato via API.
  */
-import { defineRailway, github, postgres, project, service, volume } from 'railway/iac';
+import { defineRailway, github, postgres, preserve, project, service, volume } from 'railway/iac';
 
 /**
  * Amsterdam invece del default us-west2: l'utente e i suoi dati stanno in
@@ -111,6 +111,25 @@ export default defineRailway(() => {
       CORS_ORIGINS: 'https://easygest.netlify.app',
       // Riferimento al servizio Postgres: la password non compare mai qui.
       DATABASE_URL: Postgres.env.DATABASE_URL,
+
+      /**
+       * Il valore vero sta solo nella dashboard di Railway, e `preserve()`
+       * serve esattamente a tenercelo: dichiara che la variabile *deve*
+       * esistere, senza scriverne il contenuto qui dentro.
+       *
+       * Non è una raffinatezza. Vale «omit means delete»: non nominarla
+       * affatto significherebbe che il primo `apply` la cancella, e con
+       * `JWT_SECRET` mancante l'API non parte più — perché non ha un default,
+       * il che è voluto. Scriverla in chiaro, all'opposto, significherebbe
+       * pubblicare su GitHub la chiave con cui si firmano i token di
+       * produzione: chiunque potrebbe fabbricarsene uno valido.
+       */
+      JWT_SECRET: preserve(),
+
+      // Il default nel codice è già `false`, ma qui è la produzione: se un
+      // giorno quel default cambiasse per distrazione, questa riga impedisce
+      // che la conseguenza sia un endpoint di registrazione aperto al mondo.
+      REGISTRATION_ENABLED: 'false',
     },
   });
 
