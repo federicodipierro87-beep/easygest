@@ -13,6 +13,16 @@ const envSchema = z.object({
   HOST: z.string().min(1).default('0.0.0.0'),
   PORT: z.coerce.number().int().min(1).max(65535).default(3001),
 
+  /**
+   * Connessione a PostgreSQL. Volutamente senza default: un valore di comodo
+   * qui significherebbe puntare in silenzio al database sbagliato invece di
+   * fermarsi e dirlo.
+   */
+  DATABASE_URL: z.string().min(1),
+
+  /** Connessioni massime nel pool, per processo. */
+  DATABASE_POOL_MAX: z.coerce.number().int().positive().max(100).default(10),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   /** Origini ammesse dal browser, separate da virgola. */

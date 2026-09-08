@@ -17,6 +17,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    # Stessa major del Postgres locale e di quello su Railway: le migrazioni
+    # usano una colonna generata e `pg_trgm`, cose che una major diversa
+    # potrebbe accettare o rifiutare in modo diverso.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: easygest
+          POSTGRES_PASSWORD: easygest
+          POSTGRES_DB: easygest
+        ports:
+          - 5432:5432
+        # Senza questo il job partirebbe mentre Postgres sta ancora inizializzando
+        # il cluster, e fallirebbe a intermittenza — il tipo di rottura peggiore.
+        options: >-
+          --health-cmd "pg_isready -U easygest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://easygest:easygest@localhost:5432/easygest?schema=public
+
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +52,13 @@ jobs:
       # fallisce se package.json e package-lock.json sono disallineati.
       - name: Install dependencies
         run: npm ci
+
+      # Applica le migrazioni su un database vuoto. È l'unico posto in cui il SQL
+      # scritto a mano nella migrazione iniziale — l'estensione `pg_trgm` e la
+      # colonna `searchVector` generata — viene provato da zero: in locale il
+      # database esiste già, e un errore lì resterebbe invisibile fino al deploy.
+      - name: Migrations
+        run: npm run db:deploy -w @easygest/api
 
       - name: Formatting
         run: npm run format:check

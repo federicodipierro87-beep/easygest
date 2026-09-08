@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { Env } from './config/env';
+import { prismaPlugin } from './plugins/prisma';
 import { registerSecurity } from './plugins/security';
 import { registerHealthRoutes } from './routes/health';
 
@@ -85,6 +86,7 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   });
 
   await registerSecurity(app, env);
+  await app.register(prismaPlugin, env);
   registerHealthRoutes(app);
 
   app.setNotFoundHandler((request, reply) => {

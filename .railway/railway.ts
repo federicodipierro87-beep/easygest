@@ -72,9 +72,13 @@ export default defineRailway(() => {
 
     start: 'node apps/api/dist/index.js',
 
-    // `/health` non interroga il database: se Postgres ha un singhiozzo,
-    // Railway non deve riavviare in loop anche l'API.
-    healthcheck: '/health',
+    // `/ready` e non `/health`, perché qui la domanda è «questo deploy è in
+    // grado di servire?» e non «il processo è vivo?». Railway usa l'healthcheck
+    // per decidere se promuovere la nuova release: se `DATABASE_URL` è
+    // sbagliata, `/health` risponderebbe 200 lo stesso — non tocca il database —
+    // e manderebbe in produzione un'API che fallisce ogni richiesta vera.
+    // Fallendo qui, invece, resta in piedi il deploy precedente.
+    healthcheck: '/ready',
     healthcheckTimeout: 60,
 
     replicas: { [REGION]: 1 },
