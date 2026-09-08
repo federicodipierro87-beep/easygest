@@ -224,8 +224,53 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 
 - **Tailwind v4 tramite plugin Vite**: niente `postcss.config` né
   `tailwind.config.js`, il tema si dichiara in CSS con `@theme`.
-- **Alias `@/`** già configurato in Vite e in `tsconfig`, così `npx shadcn add`
-  funzionerà senza reimpostare gli import.
+- **Alias `@/`** configurato in Vite, in `tsconfig` e — separatamente — in
+  `vitest.config.ts`: Vitest legge quest'ultimo e non quello di `apps/web`,
+  quindi senza ripeterlo i test dei componenti non risolvono `@/components/...`.
+- **L'access token vive solo in memoria.** Non in `localStorage`, che è leggibile
+  da qualunque script finisca nella pagina e sopravvive alla chiusura della
+  scheda. Non serve nemmeno: la sessione si ricostruisce dal cookie httpOnly a
+  ogni avvio, quindi un token rubato dura al massimo quanto la scheda aperta.
+- **Rinnovo a singolo volo.** È il vincolo che detta la forma dello store.
+  L'API ruota i refresh token e tratta il riuso di uno già consumato come un
+  furto, revocando l'intera famiglia: se tre query scadessero insieme e ognuna
+  chiamasse `/auth/refresh`, la prima consumerebbe il cookie e le altre due lo
+  ripresenterebbero, chiudendo la sessione. Chi arriva mentre un rinnovo è in
+  corso aspetta quello. E una richiesta che incassa un 401 dopo che qualcun
+  altro ha già rinnovato riprova col token in memoria invece di bruciare un
+  altro giro di rotazione.
+- **Tre stati di sessione, non due.** `loading` esiste perché all'avvio non
+  sappiamo ancora se una sessione c'è — la risposta sta in un cookie che il
+  JavaScript non può leggere. Trattare l'ignoto come «non autenticato» farebbe
+  comparire e sparire il modulo di accesso a ogni ricarica.
+- **Il ripristino parte prima del primo rendering**, in `main.tsx`, non da un
+  effetto: è il momento più presto possibile, e aspettare che l'albero sia
+  montato ritarderebbe la richiesta per niente.
+- **Nessun context di React per la sessione.** Lo store è già unico per
+  l'applicazione e si legge con `useSyncExternalStore`; un provider
+  aggiungerebbe solo un livello. Il vantaggio vero è che lo store è privo di
+  React, quindi la concorrenza si prova come logica pura invece che montando
+  componenti.
+- **La destinazione dopo il login è accettata solo se comincia con una singola
+  barra.** Un valore come `//altrove.example` verrebbe letto dal browser come un
+  altro host, e il login diventerebbe un trampolino per chi si fida del dominio.
+- **Errori mappati per `code`, mai per messaggio**: il testo del server può
+  cambiare senza preavviso, il codice è un contratto. `INVALID_CREDENTIALS`
+  resta vago su quale dei due campi sia sbagliato, per non permettere di
+  scoprire chi ha un account.
+- **shadcn/ui con preset `nova` su base Radix.** I componenti generati importano
+  `cn` dall'omonimo pacchetto — pubblicato dallo stesso autore dei componenti —
+  invece della vecchia coppia `clsx` + `tailwind-merge`: riscrivere quegli
+  import a ogni `shadcn add` sarebbe una tassa ricorrente. `@/lib/utils` lo
+  riesporta perché l'alias dichiarato in `components.json` resti valido.
+- **`color-scheme: light`, non `light dark`.** La tavolozza scura è generata ma
+  nessuno applica la classe che l'attiva: dichiarare entrambe farebbe disegnare
+  al browser scrollbar e controlli nativi in scuro sopra una pagina bianca.
+- **I componenti si provano con `renderToString`**, senza DOM finto. Un hook
+  usato male, un componente di React Router fuori dal suo router o uno snapshot
+  mancante in `useSyncExternalStore` non li vede né TypeScript né ESLint:
+  compaiono al primo rendering, e per farli emergere non serve un ambiente
+  jsdom più lento per tutta la suite.
 - **`VITE_API_URL` tipizzata `string | undefined`** in `vite-env.d.ts`: con
   l'index signature `any` di Vite, un refuso nel nome della variabile passerebbe
   il typecheck e si romperebbe solo in produzione.
@@ -368,6 +413,16 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   perdere tempo se non lo si sa.
 - **`exactOptionalPropertyTypes` è disattivato.** Con Prisma e Zod produce più
   attrito che valore; da rivalutare a schema stabile.
+- **React Router è fermo alla 7.** La 8 dichiara `engines: node >= 22.22.0` e in
+  locale gira la 22.18: npm risolve alla 7.18.3 senza dirlo. Il lockfile la
+  fissa, quindi CI e locale sono identici; da rivedere aggiornando Node.
+- **Un guasto di rete all'avvio manda alla pagina di accesso.** Non potendo
+  sapere se una sessione esista, l'app mostra il login; il tentativo fallirà a
+  sua volta, ma con un messaggio che spiega che l'API non risponde. Distinguere
+  davvero i due casi richiederebbe di ritentare il ripristino, che per ora non
+  vale la complessità.
+- **Il tema scuro è generato ma non raggiungibile**: mancano l'interruttore e la
+  persistenza della scelta. Da fare quando ci sarà una pagina di impostazioni.
 - **I test hanno bisogno di un database in esecuzione.** Da quando esistono i test
   di integrazione sull'autenticazione, `npm test` fallisce se Postgres non è su:
   in locale lo avvia `npm run infra:up` e `vitest.setup.ts` legge `apps/api/.env`,
