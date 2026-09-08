@@ -63,6 +63,36 @@ describe('formato delle risposte di errore', () => {
     expect(body.error.details.map((detail) => detail.field)).toContain('password');
   });
 
+  it('accetta un POST senza corpo qualunque Content-Type dichiari', async () => {
+    /**
+     * La rewrite di Netlify aggiunge un `Content-Type` ai POST che il browser
+     * manda senza. Finché Fastify non aveva un parser per quel tipo,
+     * `/auth/refresh` rispondeva 415 attraverso il proxy e 401 chiamando
+     * l'API direttamente: la sessione non si sarebbe rinnovata mai, e in
+     * sviluppo non si sarebbe visto niente.
+     */
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('MISSING_REFRESH_TOKEN');
+  });
+
+  it('rifiuta invece un corpo vero in un formato che non sa leggere', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      headers: { 'content-type': 'application/xml' },
+      payload: '<refresh/>',
+    });
+
+    expect(response.statusCode).toBe(415);
+    expect(response.json<{ error: { code: string } }>().error.code).toBe('UNSUPPORTED_MEDIA_TYPE');
+  });
+
   it('non lascia passare una richiesta senza token', async () => {
     const response = await app.inject({ method: 'GET', url: '/auth/me' });
 

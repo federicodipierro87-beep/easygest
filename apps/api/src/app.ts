@@ -93,6 +93,35 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
     bodyLimit: 1_048_576, // 1 MiB: i file non passano da qui, vanno diretti su R2
   });
 
+  /**
+   * Un POST senza corpo deve passare, qualunque `Content-Type` dichiari.
+   *
+   * `/auth/refresh` e `/auth/logout` non ricevono niente: leggono il cookie. Il
+   * browser però manda `fetch(url, { method: 'POST' })` senza `Content-Type`, e
+   * la rewrite di Netlify ne aggiunge uno per conto suo prima di inoltrare a
+   * Railway. Fastify non ha un parser per quel tipo e risponde 415, quindi la
+   * sessione non si rinnoverebbe mai: chiamando l'API direttamente lo stesso
+   * identico comando risponde 401, il che rende il difetto invisibile in
+   * sviluppo e visibile solo in produzione.
+   *
+   * Il parser accetta il corpo vuoto e rifiuta tutto il resto: una richiesta
+   * senza contenuto non ha contenuto da interpretare male, mentre un corpo vero
+   * in un formato che non sappiamo leggere resta un 415 — ora però con un
+   * codice nostro invece di quello interno di Fastify.
+   */
+  app.addContentTypeParser('*', { parseAs: 'buffer' }, (request, body, done) => {
+    if (body.length === 0) {
+      done(null, undefined);
+      return;
+    }
+    const error = new Error(
+      `Content-Type non supportato: ${request.headers['content-type'] ?? 'assente'}`,
+    ) as Error & { statusCode: number; code: string };
+    error.statusCode = 415;
+    error.code = 'UNSUPPORTED_MEDIA_TYPE';
+    done(error);
+  });
+
   await registerSecurity(app, env);
   await app.register(prismaPlugin, env);
   await app.register(authPlugin, env);
