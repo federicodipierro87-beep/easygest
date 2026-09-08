@@ -7,7 +7,10 @@ import { EnvValidationError, parseEnv } from './env';
  * verificano i default partono da qui e sovrascrivono solo ciò che li riguarda,
  * così aggiungere domani una variabile obbligatoria si corregge in un punto.
  */
-const required = { DATABASE_URL: 'postgresql://easygest:easygest@localhost:55432/easygest' };
+const required = {
+  DATABASE_URL: 'postgresql://easygest:easygest@localhost:55432/easygest',
+  JWT_SECRET: 'chiave-di-test-lunga-almeno-trentadue-caratteri',
+};
 
 describe('parseEnv', () => {
   it('applica i default in sviluppo con le sole variabili obbligatorie', () => {
@@ -16,6 +19,30 @@ describe('parseEnv', () => {
     expect(env.PORT).toBe(3001);
     expect(env.CORS_ORIGINS).toEqual(['http://localhost:5173']);
     expect(env.DATABASE_POOL_MAX).toBe(10);
+    expect(env.ACCESS_TOKEN_TTL).toBe(900);
+    expect(env.REFRESH_TOKEN_TTL).toBe(2_592_000);
+  });
+
+  it('tiene chiuse le registrazioni finché non le si apre esplicitamente', () => {
+    // Il default deve essere la scelta prudente: un'applicazione a uso
+    // personale con la registrazione aperta per distrazione raccoglie account
+    // altrui senza che nessuno se ne accorga.
+    expect(parseEnv(required).REGISTRATION_ENABLED).toBe(false);
+    expect(parseEnv({ ...required, REGISTRATION_ENABLED: 'true' }).REGISTRATION_ENABLED).toBe(true);
+  });
+
+  it('rifiuta un valore ambiguo per REGISTRATION_ENABLED', () => {
+    // `Boolean('false')` è `true`: una conversione ingenua aprirebbe le
+    // registrazioni proprio scrivendo che si vogliono chiuse.
+    expect(() => parseEnv({ ...required, REGISTRATION_ENABLED: 'no' })).toThrow(EnvValidationError);
+  });
+
+  it('non parte senza JWT_SECRET, né con una chiave troppo corta', () => {
+    // Un default qui significherebbe firmare i token di produzione con una
+    // chiave pubblicata su GitHub: chiunque potrebbe fabbricarsene uno valido.
+    const { JWT_SECRET: _omitted, ...senzaChiave } = required;
+    expect(() => parseEnv(senzaChiave)).toThrow(/JWT_SECRET/);
+    expect(() => parseEnv({ ...required, JWT_SECRET: 'corta' })).toThrow(/JWT_SECRET/);
   });
 
   it('converte la porta da stringa a intero', () => {
