@@ -225,12 +225,31 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **Netlify builda dalla radice del repository, non da `apps/web`.** Le
   dipendenze sono gestite da npm workspaces: installare dalla sottocartella
   romperebbe il collegamento con `packages/shared`.
-- **`VITE_API_URL` è sostituita a build time**, non letta a runtime: cambiare
-  l'URL dell'API richiede un nuovo deploy del frontend, non solo il riavvio.
-  Per la stessa ragione lì dentro non può finire nulla di segreto.
-- **`CORS_ORIGINS` sull'API contiene l'URL Netlify esatto.** Il refresh token
-  viaggerà in un cookie: con le credenziali la wildcard `*` è vietata dalla
-  specifica, quindi la lista deve essere corretta o il login non funziona.
+- **Il browser non chiama mai Railway: una rewrite di Netlify inoltra `/api/*`.**
+  È la scelta che rende il cookie di refresh **first-party**. `easygest.netlify.app`
+  e `api-production-d716.up.railway.app` sono domini registrabili diversi: una
+  chiamata diretta avrebbe richiesto `SameSite=None; Secure`, che Safari blocca
+  già oggi e Chrome restringe sempre di più — cioè un login che funziona sul mio
+  browser e non sul telefono del committente. L'alternativa era comprare un
+  dominio e usare `api.easygest.it`; il proxy costa zero, si fa subito e resta
+  valido anche dopo, perché sposterebbe solo l'URL scritto in `netlify.toml`.
+  La rewrite ha `status = 200`: è un proxy lato server, non un redirect, quindi
+  il browser non vede mai l'altro host.
+- **La rewrite `/api/*` deve stare prima della regola SPA `/*`.** Netlify applica
+  la prima che combacia, e la catch-all restituirebbe `index.html` alle chiamate
+  API: un errore di parsing JSON che non dice niente sulla causa vera.
+- **Lo stesso proxy esiste nel dev server di Vite.** Non è comodità: senza, in
+  locale il cookie sarebbe cross-origin e in produzione no, e i problemi di
+  autenticazione si vedrebbero solo dopo il deploy.
+- **`VITE_API_URL` vale `/api` ovunque**, ed è sostituita a build time, non letta
+  a runtime: cambiarla richiede un nuovo deploy del frontend, non il riavvio. Per
+  la stessa ragione lì dentro non può finire nulla di segreto. Essendo un
+  percorso relativo, l'URL di Railway compare in un solo posto: `netlify.toml`.
+- **`CORS_ORIGINS` non è più sulla strada del login**, dato che nessuna richiesta
+  del browser è cross-origin. Resta impostata con l'URL Netlify esatto perché
+  l'API risponde comunque al suo URL Railway, e senza lista esplicita accetterebbe
+  chiamate da qualunque pagina. La wildcard `*` resta comunque vietata dalla
+  specifica quando si inviano credenziali.
 - **Sourcemap pubblicate anche in produzione.** Un bundle client è comunque
   leggibile e non contiene segreti; in cambio un errore in produzione si legge
   con lo stack originale invece che su codice minificato.
@@ -291,11 +310,9 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **Il volume Postgres locale va ricreato** dopo il passaggio da 17 a 18:
   Postgres non avvia una data directory di una major precedente. Non essendoci
   ancora schema né dati, basta `npm run infra:reset`.
-- **Il cookie di refresh sarà un cookie di terze parti**, e va deciso prima di
-  scrivere l'autenticazione. `easygest.netlify.app` e
-  `api-production-d716.up.railway.app` sono domini registrabili diversi, quindi
-  il cookie richiede `SameSite=None; Secure` e cade sotto le restrizioni dei
-  browser sui cookie cross-site — Safari lo blocca già oggi. Le due soluzioni
-  vere sono un dominio proprio (`easygest.it` e `api.easygest.it`, che rende il
-  cookie first-party) oppure una rewrite di Netlify che inoltri `/api/*` a
-  Railway facendo apparire l'API sullo stesso host. Da decidere in Fase 1.
+- **L'API resta raggiungibile anche al suo URL Railway diretto**, oltre che
+  attraverso il proxy. Non è un problema — l'autorizzazione la farà il token, non
+  l'irraggiungibilità — ma va ricordato quando si valuterà il rate limiting: le
+  richieste che passano dal proxy arrivano tutte dagli IP di Netlify, quindi il
+  conteggio per IP le tratterebbe come un unico client. Andrà usato
+  `X-Forwarded-For`, con `trustProxy` configurato di conseguenza.
