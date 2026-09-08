@@ -336,8 +336,9 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   `apply` la cancella e l'API non parte più. Il valore vero sta solo nella
   dashboard, impostato via `variable set --stdin` per non farlo comparire fra gli
   argomenti del processo. È diverso da quello di sviluppo.
-- **Il seed di produzione si lancia con `railway ssh --service api "npm run seed
--w @easygest/api"`.** Il container ha il sorgente e le devDependencies
+- **Il seed di produzione si lancia dentro il container**, con
+  `railway ssh --service api` seguito da `npm run seed -w @easygest/api`.
+  Il container ha il sorgente e le devDependencies
   (`NPM_CONFIG_INCLUDE=dev`), quindi non serve esporre Postgres su internet: il
   servizio non ha un `DATABASE_PUBLIC_URL` e aggiungerne uno solo per il seed
   sarebbe una superficie di attacco permanente in cambio di un comando.
