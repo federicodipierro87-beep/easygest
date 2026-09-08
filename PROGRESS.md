@@ -159,6 +159,12 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **Il volume di Postgres è montato su `/var/lib/postgresql`**, non più su
   `.../data`: dalla major 18 l'immagine ufficiale vuole così, e col percorso
   vecchio il container entra in loop di riavvio.
+- **Locale, CI e produzione sono tutti su PostgreSQL 18** (18.6 in locale e su
+  Railway, `postgres:18-alpine` in CI). Verificato e non dato per scontato: una
+  major diversa in produzione accetterebbe o rifiuterebbe in modo diverso la
+  colonna generata e `pg_trgm`, e lo si scoprirebbe al deploy. Railway monta il
+  volume su `/var/lib/postgresql/data`, che è il layout pre-18, ma è una
+  convenzione della loro immagine e non indica la versione.
 - **MinIO al posto di R2 in sviluppo**: è S3-compatible, quindi il codice
   applicativo è identico e si sviluppa senza account esterni e senza rete.
 - **Il cron sarà un secondo servizio Railway sulla stessa immagine dell'API**,
