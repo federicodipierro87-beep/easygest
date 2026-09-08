@@ -204,11 +204,11 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   È bastato cancellare e ricreare il dominio, ed è il motivo per cui l'host
   dell'API contiene `d716` e non il suffisso assegnato la prima volta. Se
   ricapita: prima di cercare il problema nell'applicazione, ricreare il dominio.
-- **Netlify non è ancora collegato al repository GitHub.** Il collegamento
-  richiede di installare la GitHub App dal browser, cosa che la CLI non può
-  fare (non conserva un token GitHub). Finché non è fatto, il frontend si
-  pubblica a mano con `netlify deploy --prod --filter @easygest/web`. L'API su
-  Railway è invece già collegata e si aggiorna da sola a ogni push.
+- **Netlify ricostruisce a ogni push, anche per una modifica alla sola
+  documentazione**, perché non ha un equivalente dei `watchPatterns` di Railway.
+  Si può limitare con un comando `ignore` in `netlify.toml`, ma è un
+  interruttore che se sbagliato salta build che servivano: da valutare solo se i
+  minuti di build diventano stretti.
 - **Il volume Postgres locale va ricreato** dopo il passaggio da 17 a 18:
   Postgres non avvia una data directory di una major precedente. Non essendoci
   ancora schema né dati, basta `npm run infra:reset`.
