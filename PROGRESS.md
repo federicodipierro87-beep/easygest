@@ -134,6 +134,18 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   I tag sono fuori dal `tsvector` e hanno un GIN loro: `array_to_string` è STABLE
   e non IMMUTABLE, quindi Postgres rifiuta l'espressione generata — ma è anche
   giusto così, un tag è un'etichetta esatta, non prosa da lemmatizzare.
+- **Il seed crea solo l'indispensabile per entrare** — utente, impostazioni,
+  categorie di sistema — ed è pensato per poter girare anche in produzione. I
+  dati dimostrativi staranno in uno script separato, così non possono finire sul
+  database vero per distrazione.
+- **Il seed non sovrascrive mai la password di un utente esistente.** Un seed
+  lanciato per sbaglio non deve poter cambiare le credenziali di accesso. Se non
+  gliene si passa una, ne genera una casuale e la stampa una volta sola: in
+  database c'è solo l'hash bcrypt, che non è reversibile.
+- **`@node-rs/bcrypt` invece di `bcrypt`**: stesso algoritmo, ma binari
+  precompilati per ogni piattaforma. `bcrypt` è un addon node-gyp che, quando
+  non trova un prebuild adatto, ripiega sulla compilazione dai sorgenti in fase
+  di deploy — un modo classico di rompere una release.
 - **L'idempotenza sta nei vincoli, non nel codice del job**: `@@unique` su
   `(expenseId, dueDate)` per le occorrenze e su `dedupeKey` per i promemoria. Un
   cron che parte due volte è un caso normale, non un incidente.
