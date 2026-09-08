@@ -114,9 +114,13 @@ risorsa tolta dal file viene cancellata su Railway. Non va mai applicato alla
 cieca.
 
 ```bash
-npx railway config plan    # mostra il diff, non tocca nulla
-npx railway config apply   # applica, chiedendo conferma
+npm run railway:plan     # mostra il diff, non tocca nulla
+npm run railway:apply    # applica, chiedendo conferma
 ```
+
+I due script passano da `.railway/run.ps1` invece di chiamare la CLI
+direttamente: su Windows il controllo di versione dell'SDK è rotto e rifiuta una
+CLI aggiornata: il perché è spiegato in cima allo script.
 
 Le variabili d'ambiente vanno invece impostate sulle rispettive piattaforme.
 Sono documentate una per una, con significato e valore di produzione, in

@@ -70,6 +70,14 @@ export default defineRailway(() => {
       ],
     },
 
+    // Le migrazioni girano qui e non nello start command: Railway esegue il
+    // preDeploy una volta sola, prima di promuovere la release, e se fallisce
+    // annulla il deploy lasciando su il precedente. Nello start command, invece,
+    // verrebbero eseguite da ogni replica a ogni riavvio.
+    // `migrate deploy` e non `migrate dev`: applica solo le migrazioni già
+    // scritte e committate, non ne genera né chiede niente a un terminale.
+    preDeploy: 'npm run db:deploy -w @easygest/api',
+
     start: 'node apps/api/dist/index.js',
 
     // `/ready` e non `/health`, perché qui la domanda è «questo deploy è in

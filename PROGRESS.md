@@ -247,11 +247,15 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   usare**, bloccando qualunque comando non interattivo. Va sempre passato
   `--filter @easygest/web`. Riguarda solo la CLI: le build da Git leggono
   `netlify.toml` e non fanno domande.
-- **`railway config` non funziona da git-bash.** L'SDK verifica la versione
-  della CLI eseguendo `process.env._`, che sotto git-bash contiene un percorso
-  POSIX (`/c/Users/...`) che Windows non sa avviare, e fallisce con un
-  fuorviante «requires Railway CLI 5.42.1 or newer» anche con la 5.49.
-  Va usato PowerShell o il Prompt dei comandi.
+- **Il controllo di versione di `railway/iac` è rotto su Windows**, e rifiuta
+  una CLI 5.49 dicendo che ne serve una ≥ 5.42.1. Fallisce due volte per due
+  motivi diversi: cerca l'eseguibile in `process.env._`, che su Windows non è
+  valorizzata e ripiega su `railway`, che nel PATH è uno script `.ps1` non
+  avviabile da `execFileSync`; e se si punta `_` a `node.exe` la regex
+  `\b(\d+)\.(\d+)\.(\d+)\b` non matcha `v22.18.0`, perché fra `v` e `2` non c'è
+  confine di parola. La soluzione è `.railway/run.ps1`, che punta `_`
+  all'eseguibile nativo `@railway/cli/bin/railway.exe`; si usa via
+  `npm run railway:plan` e `npm run railway:apply`.
 - **Un dominio Railway generato prima di un cambio di regione smette di
   funzionare.** Dopo lo spostamento in `europe-west4` il dominio creato quando
   il servizio era ancora in `us-west2` rispondeva `404 Application not found`
