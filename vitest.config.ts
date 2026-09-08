@@ -7,6 +7,7 @@ export default defineConfig({
     // separato, non un ambiente globale più lento per tutti.
     environment: 'node',
     include: ['packages/*/src/**/*.test.ts', 'apps/api/src/**/*.test.ts'],
+    setupFiles: ['./vitest.setup.ts'],
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts', 'apps/api/src/**/*.ts'],
