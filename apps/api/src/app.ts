@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { Env } from './config/env';
+import { authPlugin } from './plugins/auth';
 import { prismaPlugin } from './plugins/prisma';
 import { registerSecurity } from './plugins/security';
+import { registerAuthRoutes } from './routes/auth';
 import { registerHealthRoutes } from './routes/health';
 
 /**
@@ -62,13 +64,19 @@ function describeError(error: unknown): {
   statusCode: number;
   code: string;
   message: string;
+  details?: unknown;
 } {
   if (error instanceof Error) {
-    const annotated = error as Error & { statusCode?: number; code?: string };
+    const annotated = error as Error & {
+      statusCode?: number;
+      code?: string;
+      details?: unknown;
+    };
     return {
       statusCode: annotated.statusCode ?? 500,
       code: annotated.code ?? 'INTERNAL_ERROR',
       message: error.message,
+      details: annotated.details,
     };
   }
   return { statusCode: 500, code: 'INTERNAL_ERROR', message: 'Errore sconosciuto' };
@@ -87,7 +95,9 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
 
   await registerSecurity(app, env);
   await app.register(prismaPlugin, env);
+  await app.register(authPlugin, env);
   registerHealthRoutes(app);
+  registerAuthRoutes(app, env);
 
   app.setNotFoundHandler((request, reply) => {
     const body: ErrorResponse = {
@@ -101,7 +111,7 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   });
 
   app.setErrorHandler((error: unknown, request, reply) => {
-    const { statusCode, code, message } = describeError(error);
+    const { statusCode, code, message, details } = describeError(error);
 
     if (statusCode >= 500) {
       request.log.error({ err: error }, 'Richiesta fallita');
@@ -116,6 +126,10 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
         // resta nei log, non nella risposta.
         message: statusCode >= 500 ? 'Errore interno del server' : message,
         requestId: request.id,
+        // Per la stessa ragione i dettagli escono solo sotto il 500: sono utili
+        // a evidenziare i campi sbagliati di un form, non a raccontare a un
+        // estraneo com'è fatto l'interno del server.
+        ...(details === undefined || statusCode >= 500 ? {} : { details }),
       },
     };
     return reply.status(statusCode).send(body);
