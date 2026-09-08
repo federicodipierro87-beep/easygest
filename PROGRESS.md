@@ -323,6 +323,35 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **Sourcemap pubblicate anche in produzione.** Un bundle client è comunque
   leggibile e non contiene segreti; in cambio un errore in produzione si legge
   con lo stack originale invece che su codice minificato.
+- **La rewrite di Netlify aggiunge un `Content-Type` ai POST che il browser manda
+  senza.** È costato un 415 su `/auth/refresh`, cioè una sessione che non si
+  sarebbe rinnovata mai. Il dettaglio che lo rende istruttivo: la stessa identica
+  richiesta mandata direttamente a Railway rispondeva 401, quindi in sviluppo non
+  si vedeva niente. È esattamente il tipo di difetto per cui il deploy è stato
+  anticipato alla Fase 0.5. La correzione è un parser che accetta il corpo vuoto
+  qualunque tipo dichiari e rifiuta tutto il resto.
+- **`JWT_SECRET` è dichiarata in `railway.ts` con `preserve()`**, che afferma che
+  la variabile deve esistere senza scriverne il valore. Non è una raffinatezza:
+  varrebbe «omit means delete», quindi non nominarla significherebbe che il primo
+  `apply` la cancella e l'API non parte più. Il valore vero sta solo nella
+  dashboard, impostato via `variable set --stdin` per non farlo comparire fra gli
+  argomenti del processo. È diverso da quello di sviluppo.
+- **Il seed di produzione si lancia con `railway ssh --service api "npm run seed
+-w @easygest/api"`.** Il container ha il sorgente e le devDependencies
+  (`NPM_CONFIG_INCLUDE=dev`), quindi non serve esporre Postgres su internet: il
+  servizio non ha un `DATABASE_PUBLIC_URL` e aggiungerne uno solo per il seed
+  sarebbe una superficie di attacco permanente in cambio di un comando.
+  Prerequisiti scoperti sul campo: serve una chiave SSH locale **registrata**
+  presso Railway (`railway ssh keys add`), e su Windows il percorso della chiave
+  va passato con i backslash, perché con le barre normali la CLI non la trova.
+- **Railway non pubblica il fingerprint della chiave host di `ssh.railway.com`.**
+  Al primo collegamento appare una finestra di conferma che blocca ogni comando
+  non interattivo. Quello osservato — `SHA256:+S1xg92FrnHz6pY3bpkmh1OGtWQGNANXilPzlxA7B1g`
+  — coincide con l'unico riportato in modo indipendente sul forum di Railway, ma
+  **nessuno dello staff l'ha mai confermato**, e altri utenti riferiscono
+  fingerprint diversi, segno che i server SSH sono più d'uno. È fissato in
+  `~/.ssh/known_hosts`: se un giorno ne comparisse un altro, prima di accettarlo
+  va verificato, non liquidato come «sarà l'altro server».
 
 ---
 
