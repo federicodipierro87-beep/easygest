@@ -33,6 +33,25 @@ export default defineConfig({
     // produzione. Nei test il valore va quindi fornito, e questo è quello vero.
     env: { VITE_API_URL: '/api' },
     setupFiles: ['./vitest.setup.ts'],
+    /**
+     * I cinque secondi di default sono pochi per questa suite.
+     *
+     * Ogni file gira in un worker suo, e con una decina di worker in
+     * concorrenza due cose diventano lente insieme: i test delle rotte, che
+     * aprono una connessione a PostgreSQL e ci scrivono davvero, e quelli dei
+     * componenti, che rifanno `vi.resetModules()` e reimportano l'intero grafo
+     * di React a ogni test. Nessuna delle due è lenta per un difetto, e da sole
+     * passano entrambe: il limite scattava per contesa di macchina, cioè
+     * falliva a caso e su una macchina più carica — la CI — sarebbe fallito di
+     * più.
+     */
+    testTimeout: 20_000,
+    // Il limite degli hook è separato da quello dei test, e i `beforeAll` delle
+    // rotte fanno il lavoro più lento di tutta la suite: costruiscono
+    // l'applicazione, aprono il pool verso PostgreSQL e creano gli utenti di
+    // prova. Lasciarlo ai dieci secondi di default significa che a fallire non
+    // è un test ma l'intero file, e salta in blocco.
+    hookTimeout: 20_000,
     coverage: {
       provider: 'v8',
       include: ['packages/*/src/**/*.ts', 'apps/api/src/**/*.ts', 'apps/web/src/**/*.ts'],

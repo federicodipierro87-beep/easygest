@@ -42,3 +42,15 @@ export function parseBody<S extends ZodType>(schema: S, body: unknown): z.infer<
   }
   return result.data;
 }
+
+/**
+ * Come `parseBody`, ma per i parametri dell'URL.
+ *
+ * È la stessa funzione: cambia solo il nome, perché al punto di chiamata
+ * `parseBody(schema, request.query)` si legge come uno sbaglio. Nella query
+ * string ogni valore è una stringa, quindi gli schemi che passano di qui
+ * devono convertire i numeri invece di aspettarseli già tali.
+ */
+export function parseQuery<S extends ZodType>(schema: S, query: unknown): z.infer<S> {
+  return parseBody(schema, query);
+}

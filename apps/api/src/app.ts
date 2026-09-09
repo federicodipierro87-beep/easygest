@@ -7,7 +7,9 @@ import { authPlugin } from './plugins/auth';
 import { prismaPlugin } from './plugins/prisma';
 import { registerSecurity } from './plugins/security';
 import { registerAuthRoutes } from './routes/auth';
+import { registerClientRoutes } from './routes/clients';
 import { registerHealthRoutes } from './routes/health';
+import { registerVendorRoutes } from './routes/vendors';
 
 /**
  * Formato unico delle risposte di errore.
@@ -127,6 +129,8 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   await app.register(authPlugin, env);
   registerHealthRoutes(app);
   registerAuthRoutes(app, env);
+  registerClientRoutes(app);
+  registerVendorRoutes(app);
 
   app.setNotFoundHandler((request, reply) => {
     const body: ErrorResponse = {
