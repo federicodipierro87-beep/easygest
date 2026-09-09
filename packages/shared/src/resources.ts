@@ -15,6 +15,15 @@ export const RESOURCE_ERROR_CODES = {
   duplicateName: 'DUPLICATE_NAME',
   /** Non si può cancellare: è collegato a spese o documenti. */
   inUse: 'RESOURCE_IN_USE',
+  /**
+   * Non si può cancellare: la crea il seed.
+   *
+   * Distinto da `inUse` perché non è lo stesso rifiuto e non ha la stessa via
+   * d'uscita. Lì c'è dello storico da preservare; qui la cancellazione
+   * semplicemente non resterebbe, perché il prossimo avvio del seed ricrea la
+   * riga per nome. L'interfaccia deve poter dire due cose diverse.
+   */
+  systemManaged: 'RESOURCE_IS_SYSTEM',
 } as const;
 
 export type ResourceErrorCode = (typeof RESOURCE_ERROR_CODES)[keyof typeof RESOURCE_ERROR_CODES];
