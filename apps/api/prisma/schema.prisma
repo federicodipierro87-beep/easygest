@@ -548,17 +548,36 @@ model Document {
   category    Category?           @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   occurrences ExpenseOccurrence[]
 
-  /// Colonna `tsvector` generata da Postgres a partire da titolo, numero, note
-  /// e tag. Prisma non sa esprimerla, quindi è creata in SQL nella migrazione
-  /// e dichiarata qui solo perché lo schema resti allineato al database.
-  /// La ricerca passa da `$queryRaw`, non dal client generato.
-  searchVector Unsupported("tsvector")?
+  /// Colonna `tsvector` generata da Postgres a partire da titolo, numero e
+  /// note. L'espressione `GENERATED ALWAYS ... STORED` sta nella migrazione
+  /// iniziale, in SQL: Prisma non sa esprimerla. La ricerca passa da
+  /// `$queryRaw`, non dal client generato.
+  ///
+  /// `@default(dbgenerated())` senza argomento non assegna nessun default: è
+  /// il modo documentato di dire a Prisma «questa colonna ha un valore deciso
+  /// dal database, che non provo a descriverti». Senza, il confronto fra
+  /// schema e database vede una differenza a ogni migrazione e propone
+  /// `ALTER COLUMN "searchVector" DROP DEFAULT`, che su una colonna generata
+  /// fallisce e blocca la migrazione a metà.
+  searchVector Unsupported("tsvector")? @default(dbgenerated())
 
   @@index([userId, kind, issueDate])
   @@index([userId, issueDate])
   @@index([userId, clientId])
   @@index([userId, vendorId])
   @@index([userId, checksumSha256])
+  /// I quattro indici della ricerca sono dichiarati qui, non solo creati in
+  /// SQL. È una lezione pagata: finché esistevano soltanto nella migrazione
+  /// iniziale, ogni `migrate dev` successivo li vedeva come oggetti di troppo
+  /// e apriva il file con quattro `DROP INDEX` — che vengono applicati prima
+  /// che la migrazione fallisca per altro, cioè si perdono davvero.
+  @@index([searchVector(ops: raw("tsvector_ops"))], type: Gin)
+  @@index([tags(ops: ArrayOps)], type: Gin)
+  /// `map` tiene i nomi scelti nella migrazione iniziale: senza, Prisma li
+  /// normalizzerebbe in `Document_title_idx`, che non dice più che si tratta
+  /// di un indice trigram e non di un btree sul titolo.
+  @@index([title(ops: raw("gin_trgm_ops"))], type: Gin, map: "Document_title_trgm_idx")
+  @@index([number(ops: raw("gin_trgm_ops"))], type: Gin, map: "Document_number_trgm_idx")
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
