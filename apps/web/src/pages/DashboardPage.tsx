@@ -1,11 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { useSession } from '@/hooks/use-session';
 import { ApiError, apiFetch } from '@/lib/api';
 import { env } from '@/lib/env';
-import { logout } from '@/lib/session';
 
 interface HealthResponse {
   status: string;
@@ -31,7 +28,6 @@ function formatUptime(seconds: number): string {
  */
 export function DashboardPage() {
   const session = useSession();
-  const [leaving, setLeaving] = useState(false);
 
   const health = useQuery({
     queryKey: ['health'],
@@ -41,31 +37,14 @@ export function DashboardPage() {
   });
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-2xl flex-col gap-6 px-6 py-12">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">EasyGest</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Ciao {session.user?.displayName ?? ''}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          disabled={leaving}
-          onClick={() => {
-            setLeaving(true);
-            // `logout` azzera comunque la sessione locale, anche se la chiamata
-            // fallisce: da lì `RequireAuth` rimanda al login da solo.
-            void logout().finally(() => {
-              setLeaving(false);
-            });
-          }}
-        >
-          {leaving ? 'Uscita…' : 'Esci'}
-        </Button>
+    <div className="flex flex-col gap-6">
+      <header>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          Ciao {session.user?.displayName ?? ''}
+        </h1>
       </header>
 
-      <section className="rounded-xl border p-5">
+      <section className="max-w-2xl rounded-xl border p-5">
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-muted-foreground text-sm font-medium">Stato del backend</h2>
           <code className="text-muted-foreground truncate text-xs">{env.apiUrl}</code>
@@ -103,8 +82,8 @@ export function DashboardPage() {
       </section>
 
       <p className="text-muted-foreground text-xs">
-        Fase 1 — autenticazione. Anagrafiche e spese ricorrenti arrivano nella Fase 2.
+        Anagrafiche attive. Spese ricorrenti e scadenze arrivano nella Fase 2.
       </p>
-    </main>
+    </div>
   );
 }

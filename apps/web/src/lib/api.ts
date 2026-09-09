@@ -6,6 +6,7 @@ interface ApiErrorBody {
     code: string;
     message: string;
     requestId: string;
+    details?: unknown;
   };
 }
 
@@ -15,6 +16,13 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly requestId?: string,
+    /**
+     * Contenuto variabile a seconda del codice: l'elenco dei campi sbagliati
+     * per un errore di validazione, i conteggi dello storico per un rifiuto di
+     * cancellazione. Resta `unknown` perché è chi conosce il codice a sapere
+     * cosa aspettarsi, e lo verifica invece di darlo per scontato.
+     */
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -80,6 +88,7 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
         payload.error.code,
         payload.error.message,
         payload.error.requestId,
+        payload.error.details,
       );
     }
     throw new ApiError(response.status, 'UNEXPECTED_ERROR', `Errore ${String(response.status)}`);
