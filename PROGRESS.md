@@ -25,6 +25,10 @@ in locale e vuole provare ogni fase su un URL. Rimandare il deploy alla fine
 avrebbe significato scoprire solo all'ultimo i problemi che si vedono unicamente
 in produzione — CORS, cookie cross-site, variabili d'ambiente, build in CI.
 
+Della Fase 1 restano le **categorie** e i **metodi di pagamento**: schema,
+migrazioni, seed, autenticazione (API e pagine) e anagrafiche di clienti e
+fornitori (API e pagine) sono fatti.
+
 ---
 
 ## Flusso di lavoro
@@ -117,6 +121,65 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   `{ error: ... }` della risposta. Restituire un oggetto semplice degrada il 429
   a 500, che è peggio del problema di partenza. Bloccato da un test in
   `app.test.ts`.
+
+### Anagrafiche (clienti e fornitori)
+
+- **Cancella se inutilizzato, altrimenti rifiuta e suggerisci l'archiviazione.**
+  Una cancellazione che sopravvive a spese e documenti collegati li lascerebbe
+  senza attribuzione, e il report per cliente diventerebbe una somma di righe
+  orfane; ma impedirla sempre significherebbe convivere per anni con l'errore di
+  battitura fatto il primo giorno. La `DELETE` conta i riferimenti: se sono zero
+  cancella davvero — e il nome torna disponibile, cosa che un archivio non fa —
+  altrimenti risponde 409 con `details: { expenses, documents }`.
+- **I conteggi viaggiano su ogni riga dell'elenco** (`_count` di Prisma), quindi
+  l'interfaccia sa già _prima_ di chiedere che quella cancellazione verrà
+  rifiutata, e lo spiega invece di far premere un pulsante per scoprirlo. L'API
+  ricontrolla comunque: il 409 è il vincolo, il conteggio in tabella è solo
+  cortesia.
+- **`satisfies Prisma.ClientSelect`, non `as const`.** Sembrano intercambiabili —
+  entrambi trattengono i tipi letterali — ma `as const` rende l'oggetto
+  profondamente `readonly`, e a quel punto Prisma non lo riconosce più come una
+  selezione valida: ripiega silenziosamente sulla selezione di default, `_count`
+  sparisce dal tipo della riga e l'errore che compare parla di proprietà mancanti
+  senza mai nominare la causa. Vale identico per i `where`, dove in più
+  `mode: 'insensitive'` degrada a `string` e smette di combaciare con `QueryMode`.
+- **La proprietà si verifica dentro la stessa query che modifica**, con
+  `where: { id, userId }` su `update` e `delete` — legale perché
+  `ClientWhereUniqueInput` è un `AtLeast<..., 'id' | 'userId_name'>`. Non è solo
+  una query risparmiata: leggere prima e scrivere poi lascia una finestra fra i
+  due momenti, e soprattutto un record altrui risponde `404` esattamente come uno
+  inesistente. Chiedere id a caso non dice a nessuno quali esistono.
+- **I campi opzionali usano `.default(null)`, non `.optional()`.** Con
+  `.optional()` un campo omesso resterebbe al valore precedente e la `PUT`
+  diventerebbe una `PATCH` mascherata: svuotare la partita IVA di un cliente
+  sarebbe impossibile dal form, perché il campo vuoto non arriverebbe mai. Con il
+  default a `null` la `PUT` è una sostituzione completa, che è ciò che il verbo
+  promette.
+- **La partita IVA si valida col check digit, il codice fiscale solo di
+  formato.** Le undici cifre italiane hanno un algoritmo di controllo (Luhn a
+  pesi alterni) che intercetta la cifra sbagliata o le due invertite, cioè
+  l'errore vero di chi trascrive da una fattura. Il codice fiscale ha anch'esso
+  un carattere di controllo, ma è calcolato su nome, data e comune di nascita:
+  verificarlo richiederebbe dati che qui non si raccolgono. Il controllo vale
+  solo per `countryCode === 'IT'`.
+- **I valori fiscali si normalizzano prima di validare** (`IT 007 431 101 57` →
+  `00743110157`): il formato in cui un dato viene copiato non è il formato in cui
+  va confrontato, e rifiutare uno spazio incollato è un modo gratuito di far
+  sembrare l'applicazione ostile.
+- **Le rotte di clienti e fornitori sono due file quasi identici, di proposito.**
+  Astrarle oggi costerebbe un livello di indirezione per risparmiare duplicazione
+  che è destinata a divergere: i fornitori hanno pannello e numero cliente, i
+  clienti codice destinatario e PEC, e la Fase 2 aggiungerà a questi ultimi il
+  margine. La duplicazione è però esattamente ciò che sbaglia in silenzio — una
+  query rimasta su `client` dentro il file dei fornitori compila benissimo — e
+  per questo il file di test dei fornitori, pur molto più corto, verifica
+  isolamento e ricerca sui campi propri.
+- **I test delle rotte firmano il token con `signAccessToken` invece di passare
+  da `/auth/login`.** Il limite di 5 tentativi è per IP e non si azzera fra un
+  test e l'altro: dalla sesta chiamata la suite fallirebbe per un motivo che non
+  ha niente a che vedere con ciò che sta provando. In più ogni file crea **due**
+  utenti, perché metà di quello che c'è da verificare è che il secondo non veda né
+  possa toccare i dati del primo.
 
 ### Autenticazione
 
@@ -274,6 +337,53 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **`VITE_API_URL` tipizzata `string | undefined`** in `vite-env.d.ts`: con
   l'index signature `any` di Vite, un refuso nel nome della variabile passerebbe
   il typecheck e si romperebbe solo in produzione.
+- **Il livello dati delle anagrafiche è invece condiviso** (`lib/resources.ts`),
+  al contrario delle rotte che restano due. Non è un'incoerenza: qui dentro non
+  compare un solo nome di campo, cambia unicamente la stringa del percorso.
+  Elenco paginato, mutazioni con invalidazione e lettura degli errori per campo
+  sono identici per definizione, e lo resteranno anche quando i due modelli
+  divergeranno.
+- **Ogni mutazione invalida la chiave radice della risorsa**, non la singola
+  query. La lista è filtrata, ordinata e paginata: dopo una modifica il record
+  può cambiare pagina o uscire dal filtro, e indovinare quali chiavi toccare
+  costerebbe più della rilettura.
+- **`placeholderData: (previous) => previous` sulle liste.** Cambiare pagina o
+  digitare nella ricerca sostituirebbe altrimenti la tabella con «Caricamento…»
+  a ogni tasto: tenere i dati precedenti finché non arrivano i nuovi è ciò che
+  distingue un filtro da un lampeggio.
+- **La ricerca è ritardata di 300 ms**, così una parola di otto lettere è una
+  richiesta invece di otto.
+- **I parametri ai valori di default non finiscono nella query string.** Non è
+  estetica dell'URL: `?page=1&archived=exclude` e la stringa vuota sono due
+  chiavi di cache diverse per la stessa identica lista, e senza questa
+  normalizzazione la prima schermata verrebbe scaricata due volte.
+- **Il form tiene tutti i campi come stringhe, anche quelli opzionali**, e
+  converte solo al momento dell'invio. Un `input` controllato con `value={null}`
+  passa a non controllato e React lo segnala a runtime; e la stringa vuota è
+  proprio ciò che serve per svuotare un campo, dato che la `PUT` sostituisce
+  tutto.
+- **Il dialogo del form ha `key={editing?.id ?? 'nuovo'}`.** Lo stato iniziale si
+  calcola una volta sola con `useState(() => ...)`: senza la chiave, aprire la
+  modifica di un secondo cliente riproporrebbe i valori del primo.
+- **La conferma di cancellazione non si chiude al click.** L'azione di Radix
+  chiude di suo; `preventDefault()` la trattiene, così «Elimino…» resta visibile
+  finché l'API non risponde e un rifiuto non costringe a riaprire la finestra per
+  leggerne il motivo.
+- **`aria-describedby` sta sul controllo, non sul contenitore.** Il primo
+  tentativo era un involucro che avvolgeva `<Input>`: l'attributo finiva su un
+  `div` e nessun lettore di schermo lo avrebbe mai letto. `TextField` genera da sé
+  il proprio controllo, che è l'unico modo per garantire che `id`, descrizione ed
+  errore restino collegati.
+- **`end` solo sulla voce di menù della radice.** Ogni percorso comincia con `/`,
+  quindi senza `end` le tre voci risulterebbero attive tutte insieme e il menù
+  smetterebbe di dire dove si è. È verificato contando le occorrenze di
+  `aria-current="page"` nel markup.
+- **I collegamenti a siti e pannelli dei fornitori hanno
+  `rel="noopener noreferrer"`.** `noopener` impedisce alla pagina aperta di
+  manovrare la scheda che l'ha aperta, `noreferrer` di sapere da dove arriva. Che
+  lo schema sia `http` o `https` — e non `javascript:` — è invece garantito a
+  monte dallo schema condiviso, che è la ragione per cui l'`href` si costruisce
+  senza altri controlli.
 
 ### Infrastruttura locale
 
@@ -481,3 +591,22 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   del processo — cioè a ogni deploy, e in locale a ogni ricarica di `tsx watch`.
   Per un limite anti-forza-bruta su un'applicazione a un solo utente va bene;
   diventerebbe un problema con più repliche, dove servirebbe un Redis condiviso.
+- **Il bundle del frontend è un unico file da ~560 kB (168 kB gzip)**, e Vite lo
+  segnala. È tutto in una volta perché non c'è ancora nessuno `React.lazy`: le
+  candidate naturali sono Recharts (Fase 5) e le pagine dietro il login, che chi
+  arriva alla schermata di accesso non deve scaricare. Da affrontare quando
+  entrerà la prima libreria pesante, non prima: dividere adesso sposterebbe
+  soltanto il peso.
+- **`testTimeout` e `hookTimeout` di Vitest sono alzati a 20 s.** Il primo
+  sintomo è stato un test del frontend che passava da solo e scadeva a 5 s
+  insieme agli altri: fa `vi.resetModules()` e reimporta l'intero grafo di React,
+  e con tredici worker che si contendono la macchina non è più un'operazione
+  istantanea. I due limiti sono separati — 5 s e 10 s di default — e infatti dopo
+  aver alzato il primo la suite ha ricominciato a fallire nell'`afterAll` che
+  ripulisce il database. Non è nascondere un problema: il limite predefinito
+  misura la contesa fra worker, non la correttezza.
+- **`useResourceMutations` non fa aggiornamento ottimistico.** Archiviare un
+  record aspetta la risposta prima di aggiornare la tabella. Con una lista
+  paginata e filtrata l'ottimismo richiederebbe di riscrivere a mano cache che
+  potrebbero non contenere più quel record; da valutare se la latenza reale
+  diventa fastidiosa.
