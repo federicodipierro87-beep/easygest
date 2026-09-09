@@ -11,7 +11,24 @@ import {
 
 interface DeleteResourceDialogProps {
   /** Il record da cancellare, oppure `null` quando la finestra è chiusa. */
-  target: { name: string; expenseCount: number; documentCount: number } | null;
+  target: {
+    name: string;
+    expenseCount: number;
+    /**
+     * Facoltativo perché non tutte le risorse ce l'hanno: nessun documento
+     * punta a un metodo di pagamento, e passare uno zero costante direbbe
+     * «nessun documento collegato» dove la risposta giusta è «i documenti qui
+     * non c'entrano».
+     */
+    documentCount?: number;
+    /**
+     * Ricreato dal seed a ogni avvio. Blocca la cancellazione da solo, senza
+     * storico collegato: è una ragione diversa da `RESOURCE_IN_USE` e va detta
+     * diversamente, perché la via d'uscita — archiviare — è la stessa ma il
+     * motivo per cui la si prende no.
+     */
+    isSystem?: boolean;
+  } | null;
   onCancel: () => void;
   onConfirm: () => void;
   pending: boolean;
@@ -44,8 +61,10 @@ export function DeleteResourceDialog({
   pending,
   what,
 }: DeleteResourceDialogProps) {
-  const attached = target === null ? 0 : target.expenseCount + target.documentCount;
-  const blocked = attached > 0;
+  const documents = target?.documentCount ?? 0;
+  const attached = target === null ? 0 : target.expenseCount + documents;
+  const isSystem = target?.isSystem ?? false;
+  const blocked = isSystem || attached > 0;
 
   return (
     <AlertDialog
@@ -60,12 +79,17 @@ export function DeleteResourceDialog({
             {blocked ? 'Non si può eliminare' : `Eliminare ${what}?`}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {target === null ? null : blocked ? (
+            {target === null ? null : isSystem ? (
               <>
-                «{target.name}» è collegato a{' '}
-                {describeHistory(target.expenseCount, target.documentCount)}. Eliminarlo lascerebbe
-                quello storico senza attribuzione: archivialo per toglierlo dagli elenchi senza
-                perdere il collegamento.
+                «{target.name}» fa parte delle voci predefinite: verrebbe ricreata al primo riavvio,
+                quindi eliminarla non la farebbe sparire davvero. Archiviala per toglierla dagli
+                elenchi — quello resta.
+              </>
+            ) : blocked ? (
+              <>
+                «{target.name}» è collegato a {describeHistory(target.expenseCount, documents)}.
+                Eliminarlo lascerebbe quello storico senza attribuzione: archivialo per toglierlo
+                dagli elenchi senza perdere il collegamento.
               </>
             ) : (
               <>

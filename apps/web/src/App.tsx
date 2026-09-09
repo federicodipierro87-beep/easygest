@@ -2,9 +2,12 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 
 import { AppLayout } from '@/components/AppLayout';
 import { RequireAuth } from '@/components/RequireAuth';
+import { SettingsLayout } from '@/components/SettingsLayout';
+import { CategoriesPage } from '@/pages/CategoriesPage';
 import { ClientsPage } from '@/pages/ClientsPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { LoginPage } from '@/pages/LoginPage';
+import { PaymentMethodsPage } from '@/pages/PaymentMethodsPage';
 import { VendorsPage } from '@/pages/VendorsPage';
 
 /**
@@ -39,6 +42,17 @@ export function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/clienti" element={<ClientsPage />} />
           <Route path="/fornitori" element={<VendorsPage />} />
+          {/*
+            «Impostazioni» non è una pagina ma un contenitore: l'indirizzo
+            nudo rimanda alla prima voce invece di mostrare una colonna di
+            menù accanto al vuoto. `replace` tiene il tasto «indietro»
+            funzionante — senza, tornare indietro rimbalzerebbe di nuovo qui.
+          */}
+          <Route path="/impostazioni" element={<SettingsLayout />}>
+            <Route index element={<Navigate to="/impostazioni/categorie" replace />} />
+            <Route path="categorie" element={<CategoriesPage />} />
+            <Route path="metodi-di-pagamento" element={<PaymentMethodsPage />} />
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

@@ -10,6 +10,11 @@ const SECTIONS = [
   { to: '/', label: 'Riepilogo' },
   { to: '/clienti', label: 'Clienti' },
   { to: '/fornitori', label: 'Fornitori' },
+  // Una voce sola per categorie e metodi di pagamento: si configurano una
+  // volta e poi si usano dai menù a tendina delle spese, quindi non meritano
+  // lo stesso spazio di ciò che si apre ogni giorno. Non avendo `end`, resta
+  // evidenziata su entrambe le sotto-pagine, di cui è il prefisso.
+  { to: '/impostazioni', label: 'Impostazioni' },
 ];
 
 /**
