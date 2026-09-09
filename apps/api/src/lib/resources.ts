@@ -50,6 +50,22 @@ export function duplicateName(what: string, name: string): ResourceError {
 }
 
 /**
+ * Rifiuto di cancellare qualcosa che il seed ricrea.
+ *
+ * Non è una protezione dall'utente, è una constatazione: la riga tornerebbe al
+ * prossimo avvio del seed, quindi la cancellazione non sarebbe una
+ * cancellazione ma una sparizione temporanea, tanto più confondente perché
+ * riuscirebbe. Il messaggio indica l'archiviazione, che invece resta.
+ */
+export function systemManaged(what: string): ResourceError {
+  return new ResourceError(
+    409,
+    RESOURCE_ERROR_CODES.systemManaged,
+    `${what} fa parte di quelle predefinite e il seed la ricreerebbe. Archiviala per toglierla dagli elenchi.`,
+  );
+}
+
+/**
  * Rifiuto di cancellare qualcosa a cui è agganciato dello storico.
  *
  * I conteggi viaggiano nei dettagli perché il messaggio da solo non basta a

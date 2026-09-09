@@ -7,8 +7,10 @@ import { authPlugin } from './plugins/auth';
 import { prismaPlugin } from './plugins/prisma';
 import { registerSecurity } from './plugins/security';
 import { registerAuthRoutes } from './routes/auth';
+import { registerCategoryRoutes } from './routes/categories';
 import { registerClientRoutes } from './routes/clients';
 import { registerHealthRoutes } from './routes/health';
+import { registerPaymentMethodRoutes } from './routes/payment-methods';
 import { registerVendorRoutes } from './routes/vendors';
 
 /**
@@ -131,6 +133,8 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   registerAuthRoutes(app, env);
   registerClientRoutes(app);
   registerVendorRoutes(app);
+  registerCategoryRoutes(app);
+  registerPaymentMethodRoutes(app);
 
   app.setNotFoundHandler((request, reply) => {
     const body: ErrorResponse = {
