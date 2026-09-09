@@ -12,7 +12,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | 0    | Scaffolding monorepo, config, CI, Docker locale, health check       | ✅ Completata |
 | 0.5  | Deploy anticipato: Netlify + Railway + Postgres gestito             | ✅ Completata |
 | 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | ✅ Completata |
-| 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ⬜ Da fare    |
+| 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ✅ Completata |
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ⬜ Da fare    |
 | 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ⬜ Da fare    |
 | 5    | Dashboard, report, export CSV e PDF                                 | ⬜ Da fare    |
@@ -27,8 +27,12 @@ in produzione — CORS, cookie cross-site, variabili d'ambiente, build in CI.
 
 La Fase 1 è chiusa: schema, migrazioni, seed, autenticazione, anagrafiche di
 clienti e fornitori, categorie e metodi di pagamento sono fatti, API e pagine.
-La Fase 2 parte da qui — le spese sono la prima entità che usa tutte e quattro
-le anagrafiche insieme.
+
+La Fase 2 è chiusa ed è **solo backend**, come da roadmap: motore delle
+ricorrenze, spese, occorrenze, cambi e `seed:demo`. Non c'è niente da cliccare —
+si verifica con `curl` — ed è voluto: la Fase 3 disegna le pagine partendo da un
+elenco già pieno invece che da uno vuoto. Il fetch dei cambi è stato **anticipato
+dalla Fase 4** perché senza tasso una spesa in valuta non si può nemmeno creare.
 
 ---
 
@@ -54,15 +58,15 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 
 ## Scelte di dominio concordate
 
-| Tema                | Decisione                                                                                                                                                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Regime fiscale      | **Forfettario**, nei primi 5 anni: imposta sostitutiva 5%, coefficiente di redditività 67% (ATECO 62.0x), INPS gestione separata 26,07%. Tutti modificabili da `Settings`, così al sesto anno si cambia il 5 in 15 senza toccare codice.               |
-| Costo reale         | In forfettario **l'IVA sulle fatture passive non è detraibile**: il costo di una spesa è il **totale**, non l'imponibile. Dashboard, report e previsioni ragionano sul lordo; l'imponibile resta solo dato documentale.                                |
-| Margine per cliente | Due viste distinte: **margine sui riaddebiti** (teorico, dai markup) e **margine effettivo** (fatture attive del cliente meno spese a lui imputate). La seconda serve anche ad accorgersi di un riaddebito dimenticato.                                |
-| Valute              | Multi-valuta attivo. Il tasso di cambio viene **congelato sull'occorrenza**, mai ricalcolato: altrimenti i report storici cambierebbero ogni giorno. Fonte: Frankfurter (tassi BCE), sync notturno, fallback all'ultimo tasso utile, override manuale. |
-| Pagamento spese     | Il cron marca `PAID` le occorrenze scadute con `autoRenew = true`, ma lascia `confirmedAt` a null: la dashboard le mostra come "da confermare". Serve ad accorgersi degli aumenti di prezzo del fornitore, che è uno dei motivi per cui esiste l'app.  |
-| Fatture attive      | Emesse altrove, archiviate qui con inserimento manuale degli importi. Oggi sono PDF sparsi sul filesystem: la Fase 7 prevede un **import massivo di una cartella** con compilazione assistita dei metadati.                                            |
-| Seed                | `npm run seed` crea utente, categorie e impostazioni reali. `npm run seed:demo` aggiunge i dati finti (5 clienti, 25 spese, 40 documenti), così non finiscono mai in produzione per distrazione.                                                       |
+| Tema                | Decisione                                                                                                                                                                                                                                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Regime fiscale      | **Forfettario**, nei primi 5 anni: imposta sostitutiva 5%, coefficiente di redditività 67% (ATECO 62.0x), INPS gestione separata 26,07%. Tutti modificabili da `Settings`, così al sesto anno si cambia il 5 in 15 senza toccare codice.                                                             |
+| Costo reale         | In forfettario **l'IVA sulle fatture passive non è detraibile**: il costo di una spesa è il **totale**, non l'imponibile. Dashboard, report e previsioni ragionano sul lordo; l'imponibile resta solo dato documentale.                                                                              |
+| Margine per cliente | Due viste distinte: **margine sui riaddebiti** (teorico, dai markup) e **margine effettivo** (fatture attive del cliente meno spese a lui imputate). La seconda serve anche ad accorgersi di un riaddebito dimenticato.                                                                              |
+| Valute              | Multi-valuta attivo. Il tasso di cambio viene **congelato sull'occorrenza**, mai ricalcolato: altrimenti i report storici cambierebbero ogni giorno. Fonte: Frankfurter (tassi BCE), sync notturno, fallback all'ultimo tasso utile, override manuale.                                               |
+| Pagamento spese     | Il cron marca `PAID` le occorrenze scadute con `autoRenew = true`, ma lascia `confirmedAt` a null: la dashboard le mostra come "da confermare". Serve ad accorgersi degli aumenti di prezzo del fornitore, che è uno dei motivi per cui esiste l'app.                                                |
+| Fatture attive      | Emesse altrove, archiviate qui con inserimento manuale degli importi. Oggi sono PDF sparsi sul filesystem: la Fase 7 prevede un **import massivo di una cartella** con compilazione assistita dei metadati.                                                                                          |
+| Seed                | `npm run seed` crea utente, categorie e impostazioni reali. `npm run seed:demo` aggiunge i dati finti (14 fornitori, 5 clienti, 27 spese e il loro storico), così non finiscono mai in produzione per distrazione. È idempotente per nome e ha un `--reset` che cancella solo ciò che ha creato lui. |
 
 ---
 
@@ -259,6 +263,74 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   che una casella produce — e dichiarare il tipo d'ingresso evita di forzare
   quello d'uscita con un doppio cast, cioè di dire a TypeScript una cosa falsa.
 
+### Ricorrenze e occorrenze
+
+- **Le date si contano dall'inizio, non dalla precedente.** L'occorrenza numero
+  _n_ è `startDate + n × intervallo`, mai «l'ultima più un mese». Incatenandole,
+  un mensile che parte il 31 gennaio scivolerebbe al 28 febbraio e poi al 28
+  marzo, e da lì in avanti sarebbe un abbonamento del 28: l'errore del mese corto
+  diventerebbe permanente. Con l'ancora fissa il 28 febbraio è un'eccezione che
+  si richiude da sola il 31 marzo.
+- **L'orizzonte è 13 mesi, non 12.** Un rinnovo annuale con 60 giorni di
+  preavviso va visto _insieme_ alla sua finestra di disdetta: a 12 mesi la
+  scadenza del prossimo anno entra nell'elenco lo stesso giorno in cui è già
+  troppo tardi per disdirla.
+- **La sincronizzazione tocca solo il futuro.** `syncOccurrences` lavora
+  esclusivamente su `dueDate >= oggi`: le righe `PAID`, `SKIPPED` e `CANCELLED`
+  non vengono mai riscritte. È la sola parte del backend in cui un errore
+  _distrugge_ dati invece di mostrare un numero sbagliato, e per questo la regola
+  è una riga sola invece che una serie di casi.
+- **Un aumento di prezzo vale da qui in avanti.** Modificare una spesa aggiorna
+  le occorrenze future ancora `PLANNED` e lascia intatte quelle già pagate al
+  vecchio prezzo. Se le riscrivesse tutte, lo storico direbbe che si è sempre
+  pagato l'importo di oggi.
+- **Le occorrenze future superstiti si aggiornano, non si rifanno.** Cancellare e
+  ricreare sarebbe più semplice, ma porterebbe via note e documenti allegati a
+  una scadenza futura — cioè proprio il lavoro che l'utente ha già fatto. Si
+  cancellano solo le righe la cui data è uscita dal calendario.
+- **Lo storico anteriore all'inserimento non si inventa.** Registrare oggi un
+  abbonamento del 2020 non genera sessanta righe `PLANNED`: sarebbero scadenze
+  già pagate con lo stato sbagliato, e un giornaliero di qualche anno sfonderebbe
+  da solo il tetto delle mille occorrenze. Importare lo storico è un lavoro
+  diverso, e infatti `seed:demo` lo fa a parte.
+- **Le occorrenze si leggono e si correggono, non si creano.** Non esiste una
+  `POST /occurrences`: le righe le produce il motore. La `PATCH` è l'unico punto
+  dell'API in cui una persona riscrive un numero generato.
+- **Una spesa con dello storico non si cancella** (409 `RESOURCE_IN_USE` con il
+  conteggio): le occorrenze cadrebbero in cascata portandosi via quanto è stato
+  pagato, e nessun report se ne accorgerebbe. Sospenderla toglie invece le
+  scadenze future e tiene il passato.
+- **La `PATCH` di un'occorrenza rifà i conti che dipendono da ciò che cambia.**
+  Correggere il totale rideriva l'imponibile; cambiare la sola aliquota tiene
+  fermo l'imponibile — è il dato letto sulla fattura — e ricalcola il totale.
+  Riportare una riga a `PLANNED` azzera `paidAt`, altrimenti resterebbe una
+  scadenza «non pagata» con sopra il giorno in cui è stata pagata.
+
+### Cambi (anticipati dalla Fase 4)
+
+- **Il tasso di un'occorrenza futura è quello di oggi, e si rinfresca da sé.**
+  Il cambio del 15 marzo dell'anno prossimo non esiste; chiederlo con la data di
+  scadenza restituirebbe comunque quello odierno, ma dichiarato vecchio di un
+  anno e quindi rifiutato dal controllo di obsolescenza. Per una scadenza futura
+  il cambio è una **stima**, riscritta a ogni sincronizzazione; quello vero si
+  congela alla maturazione. Il corollario pratico è che una sincronizzazione
+  intera richiede una sola conversione, non una per riga.
+- **Senza tasso ci si ferma con un 422, non si converte alla pari.** Un cambio
+  1:1 inventato produrrebbe un report sbagliato che nessuno andrebbe mai a
+  controllare; un errore esplicito si vede subito.
+- **Un tasso più vecchio di dieci giorni non è un tasso.** Il fine settimana e le
+  feste chiudono la BCE per due o tre giorni, mai per dieci: oltre quella soglia
+  la sincronizzazione è ferma, e usare l'ultimo valore noto significherebbe
+  scrivere numeri plausibili e falsi.
+- **Frankfurter pubblica «un euro vale 1,25 dollari», noi salviamo l'inverso.**
+  La conversione moltiplica, quindi la colonna contiene già il fattore giusto:
+  rovesciarlo a ogni lettura sarebbe una divisione ripetuta in giro per il
+  codice, cioè un punto in cui sbagliare verso.
+- **Ogni moltiplicazione per un tasso passa da `applyRate`**, che usa `Decimal`
+  con arrotondamento half-up. È l'unico modo per tenere la regola «mai virgola
+  mobile sul denaro» scritta in un posto solo invece che ricordata a ogni
+  chiamata.
+
 ### Autenticazione
 
 - **Access token JWT di breve durata (15 min) + refresh token opaco in cookie
@@ -316,6 +388,15 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   un finto client Prisma il test verificherebbe soltanto sé stesso. Ogni test crea
   un utente con email casuale e lo cancella, così la suite può girare sul database
   di sviluppo senza portarsi via i dati esistenti.
+- **I cambi si isolano per valuta, perché non hanno un proprietario.** Ogni altra
+  tabella si separa per `userId`: `FxRate` no, è una sola per tutti. Tre file di
+  test ci scrivevano e ripulivano con un `deleteMany()` senza filtro, quindi in
+  parallelo si portavano via a vicenda le righe su cui stavano asserendo — un
+  fallimento che compariva solo nella suite intera e mai lanciando il singolo
+  file. Ora ogni file dichiara in testa le valute che possiede e cancella solo
+  quelle; sono corone, yen e dollari canadesi perché la suite gira sullo stesso
+  database dello sviluppo e `seed:demo` usa dollari, sterline e franchi, che
+  altrimenti sparirebbero a ogni `npm test`.
 
 ### Dati e persistenza
 
@@ -775,3 +856,26 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   voce mancante nella mappa delle icone, per esempio, che non si vedrebbe fino
   al primo rendering di una categoria che la usa — ma non sostituisce dei test
   d'interazione, che arriveranno se e quando la logica del client crescerà.
+- **Le occorrenze si materializzano solo quando la spesa viene toccata.** Non
+  c'è ancora nulla che estenda l'orizzonte da sé: fra tredici mesi le scadenze
+  finiscono, e senza una modifica alla spesa nessuno le rigenera. È lavoro del
+  cron della Fase 4, che rilancerà `syncOccurrences` su tutte le spese attive —
+  la funzione è già idempotente, quindi si tratta solo di chiamarla.
+- **Lo storico anteriore all'inserimento va importato a mano.** Il motore non lo
+  genera di proposito; oggi lo scrive solo `seed:demo`, per i dati finti.
+  Registrare una spesa che esiste da anni e volerne il passato richiede un
+  importatore che non c'è.
+- **Il tasso di cambio non è correggibile a mano.** Le scelte di dominio lo
+  prevedono («override manuale»), ma la `PATCH` di un'occorrenza accetta gli
+  importi e non `fxRate`: chi paga a un cambio diverso da quello BCE — una carta
+  con commissione, per esempio — può solo correggere il totale convertito. Da
+  fare quando servirà davvero.
+- **`seed:demo` scrive lo storico con il cambio di oggi.** Le occorrenze passate
+  dei dati dimostrativi usano tutte lo stesso tasso invece di quello del loro
+  giorno: è una semplificazione voluta — richiederebbe un anno di tassi veri per
+  tre valute — ma rende i report storici in valuta dei dati finti meno
+  realistici del resto.
+- **La cancellazione di una spesa non propone alternative.** Il 409 dice quante
+  occorrenze non pianificate esistono, ma la via d'uscita — sospendere invece di
+  cancellare — la conosce solo chi ha letto l'API. È un testo che dovrà scrivere
+  il frontend nella Fase 3.

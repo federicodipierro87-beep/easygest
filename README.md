@@ -84,6 +84,17 @@ senza che nessuno dei due segnali un errore, e il risultato è un
 | `npm run infra:down`  | Ferma i container, mantenendo i dati                    |
 | `npm run infra:reset` | Ferma i container **cancellando i volumi**, poi riavvia |
 
+Nel workspace `@easygest/api` ce ne sono altri tre che si lanciano a mano:
+
+| Comando                              | Cosa fa                                                            |
+| ------------------------------------ | ------------------------------------------------------------------ |
+| `npm run seed -w @easygest/api`      | Utente, impostazioni e categorie: i dati veri, anche in produzione |
+| `npm run seed:demo -w @easygest/api` | Fornitori, clienti e 27 spese finte con il loro storico            |
+| `npm run fx:sync -w @easygest/api`   | Scarica da Frankfurter i cambi del giorno                          |
+
+`seed:demo` è idempotente e riconosce le spese dal nome; `-- --reset` cancella
+solo quelle che ha creato lui. Non va lanciato in produzione.
+
 ## Ambiente pubblico
 
 | Cosa     | URL                                                 |
