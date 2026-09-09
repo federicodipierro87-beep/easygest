@@ -11,7 +11,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | ---- | ------------------------------------------------------------------- | ------------- |
 | 0    | Scaffolding monorepo, config, CI, Docker locale, health check       | ✅ Completata |
 | 0.5  | Deploy anticipato: Netlify + Railway + Postgres gestito             | ✅ Completata |
-| 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | 🟡 In corso   |
+| 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | ✅ Completata |
 | 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ⬜ Da fare    |
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ⬜ Da fare    |
 | 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ⬜ Da fare    |
@@ -25,9 +25,10 @@ in locale e vuole provare ogni fase su un URL. Rimandare il deploy alla fine
 avrebbe significato scoprire solo all'ultimo i problemi che si vedono unicamente
 in produzione — CORS, cookie cross-site, variabili d'ambiente, build in CI.
 
-Della Fase 1 restano le **categorie** e i **metodi di pagamento**: schema,
-migrazioni, seed, autenticazione (API e pagine) e anagrafiche di clienti e
-fornitori (API e pagine) sono fatti.
+La Fase 1 è chiusa: schema, migrazioni, seed, autenticazione, anagrafiche di
+clienti e fornitori, categorie e metodi di pagamento sono fatti, API e pagine.
+La Fase 2 parte da qui — le spese sono la prima entità che usa tutte e quattro
+le anagrafiche insieme.
 
 ---
 
@@ -181,6 +182,83 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   utenti, perché metà di quello che c'è da verificare è che il secondo non veda né
   possa toccare i dati del primo.
 
+### Categorie e metodi di pagamento
+
+- **Le categorie hanno preso `isActive` con una migrazione additiva.** Erano
+  l'unica anagrafica senza archiviazione, e la mancanza si sarebbe vista solo
+  al primo tentativo di togliere dai menù una categoria con dello storico
+  attaccato: senza archiviazione l'unica uscita sarebbe stata cancellarla, che
+  è proprio ciò che l'API rifiuta. Il valore di default è `true`, quindi le
+  righe esistenti restano attive e la migrazione non tocca nulla.
+- **`isSystem` blocca la cancellazione, non la modifica.** Le categorie del seed
+  si rinominano, si ricolorano e si archiviano; non si eliminano, perché il seed
+  fa `upsert` per nome e le ricreerebbe al primo riavvio. Non è una protezione
+  dall'utente: è che la cancellazione _riuscirebbe_ e poi si disferebbe da sola,
+  il che è peggio di un rifiuto. Il codice d'errore dedicato è
+  `RESOURCE_IS_SYSTEM`, distinto da `RESOURCE_IN_USE` perché la via d'uscita è
+  la stessa — archiviare — ma il motivo no.
+- **Il seed non tocca `isActive` nell'`update` dell'upsert.** È la contropartita
+  della regola precedente: riattivare le categorie di sistema a ogni avvio
+  trasformerebbe l'unica alternativa rimasta alla cancellazione in un giro a
+  vuoto, e la voce archiviata ricomparirebbe a ogni deploy. L'`update`
+  riallinea solo `sortOrder`.
+- **`isSystem` e `sortOrder` non sono nello schema di input.** Lo schema è
+  `strictObject`, quindi mandarli è un errore di validazione e non un campo
+  ignorato: è ciò che impedisce a una `PUT` costruita a mano di togliersi da
+  sola il flag che blocca la cancellazione. Il corollario è che il `toInput` del
+  frontend deve spogliarli, altrimenti ogni archiviazione fallirebbe con un 400.
+- **Il filtro dell'elenco si chiama `usableFor`, non `scope`.**
+  `usableFor=EXPENSE` restituisce le categorie `EXPENSE` **e** quelle `BOTH`,
+  perché è la domanda che fa chi deve riempire un menù a tendina. Un confronto
+  secco su `scope` darebbe un elenco a cui manca metà delle voci senza sembrare
+  sbagliato, ed è il difetto tipico che nessuno segnala perché non si vede: il
+  nome diverso serve proprio a non far pensare a un'uguaglianza.
+- **`sortOrder` lo assegna il server**, come `max + 1`, perché è l'unico che sa
+  cosa c'è già. Due creazioni simultanee otterrebbero lo stesso numero: non è un
+  problema, la colonna non è unica e l'ordinamento ha `id` come secondo criterio,
+  quindi le due categorie finiscono affiancate in ordine stabile. L'ordinamento
+  predefinito dell'elenco è quello manuale e non l'alfabetico, perché il seed
+  numera per frequenza d'uso.
+- **Le icone sono un elenco chiuso di venti nomi**, e la corrispondenza
+  nome→componente è scritta a mano nel frontend. `lucide-react` ne esporta oltre
+  milleseicento: risolvere un nome qualsiasi a runtime richiederebbe
+  `import * as icons`, che porta l'intera libreria nel bundle. Il tipo
+  `CategoryIcon` è quello con cui è scritto anche il seed, quindi togliere un
+  nome dall'elenco non compila invece di produrre categorie senza icona.
+- **Il colore viene normalizzato, non solo validato**: `#ABC` diventa `#aabbcc`
+  e `2563eb` diventa `#2563eb`. La colonna è `varchar(7)`, e due scritture dello
+  stesso colore non devono risultare due colori diversi.
+- **La scadenza di un metodo di pagamento è un dato a due campi, valido solo
+  intero.** Un mese senza anno passerebbe la validazione — è un numero legale in
+  un campo facoltativo — si salverebbe, e il promemoria della Fase 4 non saprebbe
+  che farsene senza che nessuno abbia mai visto un errore. Un `superRefine`
+  rifiuta le due metà. L'anno non viene invece confrontato con oggi: registrare
+  una carta appena scaduta, per sapere quali abbonamenti spostare, è un uso
+  legittimo.
+- **Il confine della scadenza è l'inizio del mese _successivo_.** Una carta
+  03/2027 funziona per tutto marzo: calcolarlo con `month` invece di `month + 1`
+  la dichiarerebbe scaduta con trenta giorni d'anticipo, e il promemoria
+  arriverebbe mentre la carta funziona ancora. Vive in `expiresBefore()`, nel
+  pacchetto condiviso, perché lo useranno sia la pagina sia il cron.
+- **`last4` non è vincolato al tipo `CARD`**: le ultime quattro cifre di un IBAN
+  identificano un addebito SEPA allo stesso modo, e rifiutarle costringerebbe a
+  scriverle nelle note, dove nessuna ricerca le troverebbe. Sono infatti un
+  criterio di ricerca vero, accanto al nome: ci si arriva da una riga
+  dell'estratto conto, dove il nome che hai dato tu alla carta non compare.
+- **I numeri facoltativi passano da un `optionalNumber` e non da
+  `z.coerce.number()` nudo.** Una casella non compilata arriva come `''`, che
+  `z.coerce` convertirebbe volentieri in `0`: un mese di scadenza pari a zero,
+  salvato senza che nessuno protesti.
+- **Un metodo di pagamento non ha `documentCount`**, perché nessun documento vi
+  punta. Il campo manca dalla risposta invece di essere uno zero costante che
+  sembrerebbe un dato; nei dettagli del 409 invece c'è, a zero, perché il
+  formato di `RESOURCE_IN_USE` è uno solo e un frontend che lo trovasse assente
+  stamperebbe «undefined documenti».
+- **`PaymentMethodFormInput` è `z.input`, non `z.infer`.** È l'unica entità in
+  cui i due tipi divergono — `expiryMonth` esce numero ed entra come la stringa
+  che una casella produce — e dichiarare il tipo d'ingresso evita di forzare
+  quello d'uscita con un doppio cast, cioè di dire a TypeScript una cosa falsa.
+
 ### Autenticazione
 
 - **Access token JWT di breve durata (15 min) + refresh token opaco in cookie
@@ -282,6 +360,33 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **L'idempotenza sta nei vincoli, non nel codice del job**: `@@unique` su
   `(expenseId, dueDate)` per le occorrenze e su `dedupeKey` per i promemoria. Un
   cron che parte due volte è un caso normale, non un incidente.
+- **Ciò che esiste solo come SQL grezzo dentro una migrazione, Prisma lo
+  cancella alla migrazione successiva.** È una lezione pagata, e va scritta per
+  intero perché il modo in cui si manifesta non porta a sospettarne la causa.
+  La colonna `tsvector` generata e i quattro indici GIN/trigram del documento
+  erano stati creati a mano nella migrazione iniziale, ma non erano dichiarati
+  nello `schema.prisma`. Il confronto schema↔database li vede quindi come
+  oggetti di troppo: la prima `migrate dev` successiva — una banale aggiunta di
+  colonna — ha generato un file che si apriva con quattro `DROP INDEX` e
+  proseguiva con `ALTER COLUMN "searchVector" DROP DEFAULT`. Quest'ultima
+  fallisce, perché su una colonna generata non si può fare, e la migrazione si è
+  fermata con un `P3018`.
+- **Una migrazione fallita non viene annullata: le istruzioni già eseguite
+  restano.** I quattro `DROP INDEX` erano prima dell'istruzione che ha fallito,
+  quindi gli indici della ricerca full-text erano stati persi davvero — sul
+  database di sviluppo, per fortuna. Il recupero è stato
+  `prisma migrate resolve --rolled-back`, la rimozione della cartella della
+  migrazione e la ricreazione a mano degli indici; ma la lezione è che
+  `migrate dev` non è un'operazione atomica su cui contare.
+- **La cura è dichiarare quegli oggetti nello schema**, non ricrearli ogni volta:
+  `@default(dbgenerated())` senza argomento sulla colonna generata (è il modo
+  documentato di dire «questo valore lo decide il database, non provo a
+  descrivertelo»), e i quattro indici come `@@index([...], type: Gin)` con
+  `ops: raw("gin_trgm_ops")` dove serve. Il `map:` sui due trigram tiene i nomi
+  originali, che altrimenti Prisma normalizzerebbe in `Document_title_idx` —
+  perdendo l'informazione che non si tratta di un btree. La verifica che la cura
+  funzioni è generare una migrazione a vuoto: se il file esce vuoto, non c'è più
+  deriva.
 
 ### Frontend
 
@@ -384,6 +489,45 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   lo schema sia `http` o `https` — e non `javascript:` — è invece garantito a
   monte dallo schema condiviso, che è la ragione per cui l'`href` si costruisce
   senza altri controlli.
+- **Le impostazioni sono una rotta annidata con menù a sinistra**, non delle
+  schede in cima. `/impostazioni` da sola reindirizza a `/impostazioni/categorie`
+  con `replace`, così il tasto «indietro» non rimbalza fra le due. Il menù è una
+  colonna perché l'elenco crescerà — la Fase 6 porta qui il regime fiscale — e
+  delle schede che vanno a capo sono peggio di una colonna. La voce nella barra
+  principale non ha `end`, ed è proprio quello che la tiene evidenziata su
+  entrambe le sottopagine.
+- **La corrispondenza nome→icona è scritta a mano.** `lucide-react` esporta oltre
+  milleseicento componenti: un `import * as icons` per risolvere venti nomi a
+  runtime porterebbe l'intera libreria nel bundle, perché nessun bundler può
+  sapere quali servono. Un `Record<CategoryIcon, LucideIcon>` con venti import
+  nominali costa quello che usa, e se domani si aggiunge un nome alla lista
+  condivisa il tipo non compila finché la mappa non lo copre. Il conto torna: la
+  build passa da ~560 kB a 587 kB per venti icone, due pagine, due finestre e un
+  layout.
+- **Il pulsante «elimina» resta attivo anche sulle categorie predefinite.** Un
+  pulsante disattivato non risponde alla domanda «perché no?»; la finestra sì.
+  `DeleteResourceDialog` ha quindi tre stati invece di due — predefinita, in uso,
+  eliminabile — e la prima spiega che la voce verrebbe ricreata al riavvio, cosa
+  che non ha niente a che vedere con lo storico collegato.
+- **`documentCount` nel dialogo è facoltativo, non zero.** Nessun documento punta
+  a un metodo di pagamento: passare uno zero costante direbbe «nessun documento
+  collegato» dove la risposta giusta è «i documenti qui non c'entrano», e la
+  frase generata cambierebbe di conseguenza.
+- **Il colore della categoria è un pallino accanto al nome**, non lo sfondo della
+  riga. Undici righe colorate sono una tabella illeggibile; undici pallini sono
+  undici categorie che si distinguono con la coda dell'occhio.
+- **La scadenza di una carta diventa rossa dal mese _dopo_.** Il confine è
+  `Date.UTC(anno, mese, 1)` — con `mese` non decrementato — perché una carta
+  03/2027 funziona per tutto marzo, e segnarla in rosso il primo del mese sarebbe
+  un allarme con trenta giorni d'anticipo.
+- **Il form dei metodi di pagamento è tipizzato con `z.input`, non con un cast.**
+  È l'unica entità in cui il tipo d'ingresso e quello d'uscita divergono:
+  `expiryMonth` esce numero ma entra come la stringa che una casella produce.
+  `as unknown as PaymentMethodInput` avrebbe zittito il compilatore dicendogli una
+  cosa falsa; `z.input<typeof paymentMethodInputSchema>` gli dice quella vera, e
+  continuerebbe a funzionare se un domani un campo cambiasse forma. Che il tipo
+  non sia degenerato in `any` è stato verificato: rifiuta `label: 42` e
+  `type: 'CHEQUE'`, accetta `expiryMonth: '03'`.
 
 ### Infrastruttura locale
 
@@ -591,12 +735,13 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   del processo — cioè a ogni deploy, e in locale a ogni ricarica di `tsx watch`.
   Per un limite anti-forza-bruta su un'applicazione a un solo utente va bene;
   diventerebbe un problema con più repliche, dove servirebbe un Redis condiviso.
-- **Il bundle del frontend è un unico file da ~560 kB (168 kB gzip)**, e Vite lo
+- **Il bundle del frontend è un unico file da 587 kB (174 kB gzip)**, e Vite lo
   segnala. È tutto in una volta perché non c'è ancora nessuno `React.lazy`: le
   candidate naturali sono Recharts (Fase 5) e le pagine dietro il login, che chi
   arriva alla schermata di accesso non deve scaricare. Da affrontare quando
   entrerà la prima libreria pesante, non prima: dividere adesso sposterebbe
-  soltanto il peso.
+  soltanto il peso. Le pagine delle impostazioni sono costate 26 kB in tutto,
+  icone comprese: la crescita finora è proporzionata a ciò che si aggiunge.
 - **`testTimeout` e `hookTimeout` di Vitest sono alzati a 20 s.** Il primo
   sintomo è stato un test del frontend che passava da solo e scadeva a 5 s
   insieme agli altri: fa `vi.resetModules()` e reimporta l'intero grafo di React,
@@ -610,3 +755,23 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   paginata e filtrata l'ottimismo richiederebbe di riscrivere a mano cache che
   potrebbero non contenere più quel record; da valutare se la latenza reale
   diventa fastidiosa.
+- **L'ordine delle categorie non si può cambiare dall'interfaccia.** Il campo
+  `sortOrder` esiste, il server lo assegna e la lista lo rispetta, ma non c'è
+  modo di trascinare una riga: riordinare richiede una `PATCH` dedicata che
+  riscriva più righe in una transazione, e con undici voci predefinite il
+  problema non si pone ancora. Da fare quando le categorie saranno tante
+  abbastanza da rendere l'ordine alfabetico insufficiente.
+- **`sortOrder` ha una corsa benigna.** Il server legge il massimo e ci somma
+  uno: due creazioni simultanee otterrebbero lo stesso numero. La conseguenza è
+  due categorie affiancate in ordine arbitrario, non un errore, e per un'app a
+  un solo utente non vale una transazione serializzabile.
+- **La finestra di modifica non avvisa se si chiude con modifiche non salvate.**
+  Vale per tutte e quattro le anagrafiche, non solo per le nuove pagine: un clic
+  fuori dal riquadro perde quel che si stava scrivendo. Da risolvere una volta
+  per tutte nel componente condiviso, non finestra per finestra.
+- **I test delle pagine sono prove di accensione, non di comportamento.**
+  `renderToString` verifica che l'albero si costruisca e che certe frasi ci
+  siano; non clicca niente. Serve a intercettare le rotture strutturali — una
+  voce mancante nella mappa delle icone, per esempio, che non si vedrebbe fino
+  al primo rendering di una categoria che la usa — ma non sostituisce dei test
+  d'interazione, che arriveranno se e quando la logica del client crescerà.
