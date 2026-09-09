@@ -15,6 +15,7 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "seed": "tsx prisma/seed.ts",
+    "fx:sync": "tsx --env-file-if-exists=.env src/scripts/sync-fx.ts",
     "postinstall": "prisma generate"
   },
   "devDependencies": {
