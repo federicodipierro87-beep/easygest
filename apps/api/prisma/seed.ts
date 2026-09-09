@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto';
 
 import { hash } from '@node-rs/bcrypt';
 import { PrismaPg } from '@prisma/adapter-pg';
+import type { CategoryIcon } from '@easygest/shared';
 
 import { PrismaClient } from '../src/generated/prisma/client';
 
@@ -40,8 +41,12 @@ const DEFAULT_EMAIL = 'federico.dipierro87@gmail.com';
  * Per i documenti non ci sono categorie di sistema: quelli sono già classificati
  * da `DocumentKind`, e una seconda tassonomia parallela creerebbe solo il dubbio
  * su quale delle due usare.
+ *
+ * Il tipo dell'icona è `CategoryIcon`, cioè l'elenco chiuso che il frontend sa
+ * disegnare: togliere un nome da lì fa fallire la compilazione di questo file
+ * invece di produrre in silenzio undici categorie senza icona.
  */
-const SYSTEM_CATEGORIES = [
+const SYSTEM_CATEGORIES: readonly { name: string; color: string; icon: CategoryIcon }[] = [
   { name: 'Hosting e server', color: '#2563eb', icon: 'server' },
   { name: 'Domini', color: '#0ea5e9', icon: 'globe' },
   { name: 'Certificati SSL', color: '#14b8a6', icon: 'shield-check' },
@@ -148,6 +153,12 @@ async function main(): Promise<void> {
         // Solo l'ordinamento si riallinea: nome, colore e icona possono essere
         // stati cambiati dall'utente, e il seed non è autorizzato a disfare le
         // sue modifiche.
+        //
+        // `isActive` in particolare **non** va toccato. L'API rifiuta di
+        // cancellare una categoria di sistema proprio perché il seed la
+        // ricreerebbe, e indica l'archiviazione come alternativa: rimetterla
+        // attiva qui trasformerebbe l'unica via d'uscita rimasta in un giro a
+        // vuoto, e la categoria ricomparirebbe a ogni deploy.
         update: { sortOrder: index },
       });
     }

@@ -222,9 +222,23 @@ model Category {
   /// Nome dell'icona lucide-react, risolto dal frontend.
   icon  String?
 
-  /// Creata dal seed iniziale: l'interfaccia la può nascondere dalle
-  /// cancellazioni, per non lasciare l'utente senza categorie di base.
-  isSystem  Boolean  @default(false)
+  /// Creata dal seed iniziale. Non si può cancellare — il seed la
+  /// ricreerebbe al prossimo avvio, quindi la cancellazione non resterebbe —
+  /// ma si può rinominare, ricolorare e archiviare.
+  isSystem Boolean @default(false)
+
+  /// Archiviata: sparisce dai menù a tendina senza staccare lo storico.
+  ///
+  /// Le spese e i documenti puntano alla categoria con `onDelete: SetNull`,
+  /// quindi cancellarne una in uso non romperebbe niente — toglierebbe però
+  /// l'etichetta a tutto ciò che vi era classificato, e un report per
+  /// categoria di tre anni fa diventerebbe una colonna «senza categoria».
+  /// L'archiviazione è la via d'uscita per chi ha storico; la cancellazione
+  /// resta per chi è stato creato per sbaglio.
+  isActive Boolean @default(true)
+
+  /// Ordine nei menù a tendina: le categorie più frequenti prima, invece
+  /// dell'alfabetico che metterebbe «Backup» sopra «Hosting».
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -235,6 +249,7 @@ model Category {
 
   @@unique([userId, name])
   @@index([userId, scope])
+  @@index([userId, isActive])
 }
 
 enum PaymentMethodType {
