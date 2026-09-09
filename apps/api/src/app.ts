@@ -9,7 +9,9 @@ import { registerSecurity } from './plugins/security';
 import { registerAuthRoutes } from './routes/auth';
 import { registerCategoryRoutes } from './routes/categories';
 import { registerClientRoutes } from './routes/clients';
+import { registerExpenseRoutes } from './routes/expenses';
 import { registerHealthRoutes } from './routes/health';
+import { registerOccurrenceRoutes } from './routes/occurrences';
 import { registerPaymentMethodRoutes } from './routes/payment-methods';
 import { registerVendorRoutes } from './routes/vendors';
 
@@ -135,6 +137,8 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   registerVendorRoutes(app);
   registerCategoryRoutes(app);
   registerPaymentMethodRoutes(app);
+  registerExpenseRoutes(app);
+  registerOccurrenceRoutes(app);
 
   app.setNotFoundHandler((request, reply) => {
     const body: ErrorResponse = {
