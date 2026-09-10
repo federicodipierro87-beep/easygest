@@ -4,11 +4,7 @@ import { Archive, ArchiveRestore, ExternalLink, Pencil, Trash2 } from 'lucide-re
 import { useState } from 'react';
 
 import { DeleteResourceDialog } from '@/components/DeleteResourceDialog';
-import {
-  ArchivedSelect,
-  ResourcePagination,
-  ResourceToolbar,
-} from '@/components/ResourceControls';
+import { ArchivedSelect, ResourcePagination, ResourceToolbar } from '@/components/ResourceControls';
 import { VendorFormDialog } from '@/components/VendorFormDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

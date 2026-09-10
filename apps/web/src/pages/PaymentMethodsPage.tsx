@@ -10,11 +10,7 @@ import { useState } from 'react';
 
 import { DeleteResourceDialog } from '@/components/DeleteResourceDialog';
 import { PaymentMethodFormDialog } from '@/components/PaymentMethodFormDialog';
-import {
-  ArchivedSelect,
-  ResourcePagination,
-  ResourceToolbar,
-} from '@/components/ResourceControls';
+import { ArchivedSelect, ResourcePagination, ResourceToolbar } from '@/components/ResourceControls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {

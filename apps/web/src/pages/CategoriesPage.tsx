@@ -5,11 +5,7 @@ import { useState } from 'react';
 
 import { CategoryFormDialog } from '@/components/CategoryFormDialog';
 import { DeleteResourceDialog } from '@/components/DeleteResourceDialog';
-import {
-  ArchivedSelect,
-  ResourcePagination,
-  ResourceToolbar,
-} from '@/components/ResourceControls';
+import { ArchivedSelect, ResourcePagination, ResourceToolbar } from '@/components/ResourceControls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
