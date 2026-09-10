@@ -24,20 +24,32 @@ export interface ListParams {
 }
 
 /**
- * La query string parte solo con ciò che l'utente ha davvero scelto.
+ * Le coppie che l'utente ha davvero scelto, in una query string.
  *
- * I default li ha già lo schema Zod dell'API: ripeterli qui vorrebbe dire
+ * `undefined` vuol dire «su questo non chiedo niente», e la chiave sparisce. I
+ * default li ha già lo schema Zod dell'API: ripeterli qui vorrebbe dire
  * mantenerli allineati in due posti, e soprattutto farebbe di ogni ricerca
  * vuota una chiave di cache diversa da quella dell'elenco iniziale.
+ *
+ * È l'unica parte di questo modulo che le spese riusano: tutto il resto qui
+ * parla di anagrafiche, questa non parla di niente.
  */
-function toSearchParams(params: ListParams): string {
+export function queryString(entries: readonly (readonly [string, string | undefined])[]): string {
   const search = new URLSearchParams();
-  if (params.q !== '') search.set('q', params.q);
-  if (params.page !== 1) search.set('page', String(params.page));
-  if (params.archived !== 'exclude') search.set('archived', params.archived);
-  search.set('sort', params.sort);
-  search.set('direction', params.direction);
+  for (const [key, value] of entries) {
+    if (value !== undefined) search.set(key, value);
+  }
   return search.toString();
+}
+
+function toSearchParams(params: ListParams): string {
+  return queryString([
+    ['q', params.q === '' ? undefined : params.q],
+    ['page', params.page === 1 ? undefined : String(params.page)],
+    ['archived', params.archived === 'exclude' ? undefined : params.archived],
+    ['sort', params.sort],
+    ['direction', params.direction],
+  ]);
 }
 
 /**
