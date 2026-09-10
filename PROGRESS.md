@@ -13,7 +13,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | 0.5  | Deploy anticipato: Netlify + Railway + Postgres gestito             | ✅ Completata |
 | 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | ✅ Completata |
 | 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ✅ Completata |
-| 3    | Frontend: lista e dettaglio spese, filtri, form                     | ⬜ Da fare    |
+| 3    | Frontend: lista e dettaglio spese, filtri, form                     | ✅ Completata |
 | 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ⬜ Da fare    |
 | 5    | Dashboard, report, export CSV e PDF                                 | ⬜ Da fare    |
 | 6    | Previsioni e simulatore what-if                                     | ⬜ Da fare    |
@@ -33,6 +33,14 @@ ricorrenze, spese, occorrenze, cambi e `seed:demo`. Non c'è niente da cliccare 
 si verifica con `curl` — ed è voluto: la Fase 3 disegna le pagine partendo da un
 elenco già pieno invece che da uno vuoto. Il fetch dei cambi è stato **anticipato
 dalla Fase 4** perché senza tasso una spesa in valuta non si può nemmeno creare.
+
+La Fase 3 è chiusa e ha aggiunto tre pagine: l'elenco delle spese, il dettaglio
+di una spesa su `/spese/:id` e l'elenco globale delle scadenze su `/scadenze`.
+Quest'ultima non era nella roadmap ed è stata aggiunta perché il dettaglio
+risponde a «cosa pago per questo servizio» ma non a «cosa devo pagare», che è la
+domanda quotidiana. Il backend non è stato toccato: la Fase 2 esponeva già tutto
+il necessario, e l'unica riga aggiunta a `packages/shared` è il tipo dei dettagli
+del rifiuto di cancellazione.
 
 ---
 
@@ -609,6 +617,94 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   continuerebbe a funzionare se un domani un campo cambiasse forma. Che il tipo
   non sia degenerato in `any` è stato verificato: rifiuta `label: 42` e
   `type: 'CHEQUE'`, accetta `expiryMonth: '03'`.
+- **Spese e scadenze hanno un livello dati proprio** (`lib/expenses.ts`), non
+  `lib/resources.ts` allargato. Le due ragioni sono tecniche. La prima: **le
+  invalidazioni sono incrociate**. Scrivere una spesa fa girare `syncOccurrences`
+  sul server, e una `PATCH` su un'occorrenza cambia `nextDueDate` e
+  `occurrenceCount` della spesa: ogni mutazione deve rileggere **due** radici,
+  mentre `useResourceMutations` ne invalida una per costruzione — ed è giusto
+  così, un cliente salvato non tocca nient'altro. La seconda: **manca un verbo**.
+  Le occorrenze non si creano e non si cancellano, hanno solo `PATCH`, e
+  aggiungerlo al modulo condiviso darebbe alle quattro anagrafiche un metodo che
+  il loro server non espone. Di davvero comune resta `queryString`, che infatti
+  non nomina nessun campo.
+- **La sentinella dei filtri è `'all'`, non la stringa vuota.** Radix riserva
+  `value=""` per «nessuna scelta» e **rifiuta a runtime** un `SelectItem` che la
+  usi. Per lo stesso motivo la tendina delle relazioni usa `'none'`.
+- **Il client valida solo ciò che il server non può vedere.** Cioè una cosa sola:
+  che una casella numerica contenga un numero. Il server riceve `netCents: null`
+  e non sa se la casella era vuota — legittimo, l'imponibile si può omettere se
+  c'è il totale — o se conteneva «dodici e cinquanta». Tutte le regole incrociate
+  restano nel `superRefine` di `expenseInputSchema` e tornano indietro già
+  indirizzate al campo giusto: duplicarle nel client vorrebbe dire due copie che
+  divergono, e la copia sbagliata sarebbe quella che l'utente vede per prima.
+- **Le regole incrociate si vedono come assenza di caselle.** `ONE_OFF` nasconde
+  intervallo, data di fine e preavviso; `rebillMode === 'NONE'` nasconde ricarico
+  e forfait. Non è validare, è non proporre: una casella che il server
+  rifiuterebbe comunque è un invito a sbagliare.
+- **L'oggetto da inviare si costruisce campo per campo, mai con uno spread dallo
+  stato.** `JSON.stringify` elimina le chiavi `undefined`, quindi un campo non
+  raccolto semplicemente non esiste nel corpo e lo `strictObject` del server è
+  contento; uno spread ci farebbe invece finire dentro tutto lo stato del form,
+  comprese le stringhe grezze delle caselle. È la stessa ragione per cui `toData`
+  sul server è scritto a mano.
+- **Un giorno di calendario si formatta sulla stringa, senza passare da `Date`.**
+  `new Date('2027-03-15')` è mezzanotte UTC, e a ovest di Greenwich
+  `toLocaleDateString('it-IT')` stampa il **14**. `formatInstant` parte invece da
+  un `Date` vero, perché `paidAt` _è_ un istante e mostrarlo nel fuso di chi
+  guarda è la cosa giusta. Per lo stesso motivo `todayIso` usa i getter locali:
+  con quelli UTC una scadenza dovuta oggi risulterebbe futura per mezz'ora ogni
+  notte.
+- **Percentuali e importi condividono la conversione.** `22,5%` → `2250` basis
+  point è la stessa trasformazione di `22,50 €` → `2250` centesimi, e
+  `parsePercent` chiama `parseEuro`. Riscriverla vorrebbe dire due idee di cosa
+  sia `1.234` — milleduecentotrentaquattro in Italia, uno virgola due tre quattro
+  in inglese.
+- **La `PATCH` di un'occorrenza manda solo i campi cambiati.** Il server tratta un
+  campo assente come «lascialo com'è», e quando arrivano insieme netto e lordo li
+  tiene entrambi senza ricalcolare — giustamente, perché una fattura che
+  arrotonda l'IVA riga per riga ha ragione lei. Rispedire sempre la coppia, che è
+  quello che verrebbe naturale costruendo il corpo dallo stato, farebbe sì che
+  **correggere la sola aliquota non abbia alcun effetto visibile**.
+- **«Segna pagata» conferma nello stesso gesto** (`{status:'PAID',
+confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
+  precisamente lo stato che lascia il cron quando nessuno ha guardato: lasciarla
+  da confermare chiederebbe due click per un'unica constatazione.
+- **«Da confermare» è una voce della tendina degli stati, non una casella
+  accanto.** Sul server `unconfirmed` sovrascrive `status`, quindi due controlli
+  indipendenti lascerebbero comporre «Prevista + solo da confermare» e
+  restituirebbero delle pagate. Come quinta scelta della stessa tendina la
+  combinazione impossibile non si può nemmeno esprimere.
+- **Le spese hanno un dialogo di cancellazione proprio.** `DELETE /expenses/:id`
+  conta le occorrenze con `status: { not: 'PLANNED' }`, mentre
+  `Expense.occurrenceCount` è il totale: dalla riga dell'elenco **non si può
+  sapere in anticipo** se la cancellazione passerà, e `DeleteResourceDialog` è
+  costruito tutto sul «lo so già dai conteggi». Il dialogo delle spese ha quindi
+  due stati — prima del tentativo e dopo il rifiuto — e il secondo è l'unico
+  posto in cui compare la via d'uscita vera: sospendere invece di cancellare.
+- **`/spese` non ha `end`**, così resta evidenziata anche sul dettaglio di una
+  spesa: da lì non si è usciti dalla sezione, ci si è entrati dentro. È l'inverso
+  della regola della radice.
+- **Un dettaglio inesistente non reindirizza.** Il rimbalzo sull'elenco farebbe
+  sparire l'indirizzo sbagliato dalla barra prima che qualcuno possa leggerlo, e
+  chi è arrivato da un segnalibro vecchio si ritroverebbe altrove senza sapere
+  perché. La frase resta e il collegamento lo porta via lui. La query non
+  ritenta: un identificativo inesistente resterà inesistente al terzo tentativo.
+- **Il modulo della spesa non ha un test di rendering.** Il contenuto di un
+  `Dialog` Radix vive in un portale, e in SSR un portale non produce markup: il
+  test passerebbe verificando il vuoto. Si prova `toInput`, cioè la conversione
+  da sette caselle di testo al corpo della richiesta, che è dove si sbaglia
+  davvero — e la si prova **contro `expenseInputSchema`**, non contro una copia
+  delle sue regole.
+- **I test delle pagine riempiono la cache prima di disegnare.** Senza righe
+  queste pagine mostrano tre parole e «Caricamento…», e un test che le trova
+  avrebbe verificato l'intestazione di una tabella vuota. Con
+  `queryClient.setQueryData` si prova ciò che conta: che le etichette vengano
+  dalle costanti condivise e non da una copia locale, che «Da confermare»
+  compaia sulle pagate mai verificate, che il dettaglio legga `useParams` —
+  ed è per questo che va montato dentro `<Route path="/spese/:id">`, altrimenti
+  `useParams` restituisce un oggetto vuoto e il test prova un caso che
+  dall'applicazione non si raggiunge.
 
 ### Infrastruttura locale
 
@@ -816,13 +912,14 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   del processo — cioè a ogni deploy, e in locale a ogni ricarica di `tsx watch`.
   Per un limite anti-forza-bruta su un'applicazione a un solo utente va bene;
   diventerebbe un problema con più repliche, dove servirebbe un Redis condiviso.
-- **Il bundle del frontend è un unico file da 587 kB (174 kB gzip)**, e Vite lo
+- **Il bundle del frontend è un unico file da 633 kB (186 kB gzip)**, e Vite lo
   segnala. È tutto in una volta perché non c'è ancora nessuno `React.lazy`: le
   candidate naturali sono Recharts (Fase 5) e le pagine dietro il login, che chi
   arriva alla schermata di accesso non deve scaricare. Da affrontare quando
   entrerà la prima libreria pesante, non prima: dividere adesso sposterebbe
-  soltanto il peso. Le pagine delle impostazioni sono costate 26 kB in tutto,
-  icone comprese: la crescita finora è proporzionata a ciò che si aggiunge.
+  soltanto il peso. Le pagine delle impostazioni erano costate 26 kB in tutto,
+  icone comprese; le tre delle spese altri 46: la crescita resta proporzionata a
+  ciò che si aggiunge.
 - **`testTimeout` e `hookTimeout` di Vitest sono alzati a 20 s.** Il primo
   sintomo è stato un test del frontend che passava da solo e scadeva a 5 s
   insieme agli altri: fa `vi.resetModules()` e reimporta l'intero grafo di React,
@@ -875,7 +972,30 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   giorno: è una semplificazione voluta — richiederebbe un anno di tassi veri per
   tre valute — ma rende i report storici in valuta dei dati finti meno
   realistici del resto.
-- **La cancellazione di una spesa non propone alternative.** Il 409 dice quante
-  occorrenze non pianificate esistono, ma la via d'uscita — sospendere invece di
-  cancellare — la conosce solo chi ha letto l'API. È un testo che dovrà scrivere
-  il frontend nella Fase 3.
+- **Due funzioni per due forme dello stesso `RESOURCE_IN_USE`.** `inUseDetails`
+  legge i due conteggi delle anagrafiche, `occurrencesInUse` l'unico delle spese.
+  Il codice d'errore è lo stesso, i dettagli no. Una funzione sola restituirebbe
+  un tipo su cui chi chiama dovrebbe comunque fare una domanda in più; se un
+  terzo modello arrivasse con una terza forma, converrebbe invece un
+  discriminante dentro `details`.
+- **I filtri non stanno nell'indirizzo.** Vale per tutte le liste: una vista
+  costruita a fatica — stato, fornitore, finestra di scadenza — non si può
+  mandare a nessuno né ritrovare col tasto «indietro». Da fare per tutti gli
+  elenchi insieme, altrimenti si finisce con due modi diversi di leggere la barra
+  degli indirizzi.
+- **Il totale di `/scadenze` è quello della pagina, non del filtro.** Il client ha
+  in mano venti righe su duecento: sommare tutto richiederebbe un endpoint che lo
+  faccia. Per ora la pagina lo dichiara («In questa pagina: …»), perché un numero
+  senza la riserva sembrerebbe il conto del mese.
+- **Le azioni sulle occorrenze non sono ottimistiche.** «Segna pagata» aspetta la
+  risposta, e ogni mutazione invalida due radici: su una tabella lunga si vede.
+  Stessa ragione di `useResourceMutations` — con liste paginate e filtrate
+  l'ottimismo richiederebbe di riscrivere a mano cache che potrebbero non
+  contenere più quella riga.
+- **`documentId` non è raggiungibile dall'interfaccia.** La `PATCH` di
+  un'occorrenza lo accetta, ma non c'è nulla da collegare finché la Fase 7 non
+  porta l'archivio documenti. Il campo resta scoperto dai test del client.
+- **Il bundle va rimisurato a ogni fase.** Le tre pagine delle spese l'hanno
+  portato da 587 a 633 kB (186 kB gzip): la crescita resta proporzionata, ma
+  oltre i 700 kB conviene anticipare il primo `React.lazy` invece di aspettare
+  Recharts.
