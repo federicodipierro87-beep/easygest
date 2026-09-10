@@ -11,6 +11,10 @@ const SECTIONS = [
   // Senza `end`, resta evidenziata anche sul dettaglio di una spesa: da lì non
   // si è usciti dalla sezione, ci si è entrati dentro.
   { to: '/spese', label: 'Spese' },
+  // Accanto alle spese e non dentro: sono le stesse righe lette al contrario —
+  // là per contratto, qui per data — ed è la seconda lettura, non un dettaglio
+  // della prima.
+  { to: '/scadenze', label: 'Scadenze' },
   { to: '/clienti', label: 'Clienti' },
   { to: '/fornitori', label: 'Fornitori' },
   // Una voce sola per categorie e metodi di pagamento: si configurano una

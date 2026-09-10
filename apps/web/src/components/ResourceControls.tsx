@@ -29,8 +29,15 @@ interface ToolbarProps {
   query: string;
   onQueryChange: (value: string) => void;
   placeholder: string;
-  onCreate: () => void;
-  createLabel: string;
+  /**
+   * Assenti sugli elenchi che non creano niente.
+   *
+   * Le scadenze le genera il motore a partire dalla spesa: un pulsante «Nuova»
+   * lì prometterebbe qualcosa che l'API non espone, e la risposta giusta —
+   * «aggiungi la spesa, le scadenze arrivano da sole» — non la suggerirebbe.
+   */
+  onCreate?: () => void;
+  createLabel?: string;
   /** I filtri propri di questo elenco, fra la ricerca e il pulsante. */
   children?: ReactNode;
 }
@@ -64,10 +71,12 @@ export function ResourceToolbar({
 
       {children}
 
-      <Button onClick={onCreate}>
-        <Plus aria-hidden className="size-4" />
-        {createLabel}
-      </Button>
+      {onCreate !== undefined && (
+        <Button onClick={onCreate}>
+          <Plus aria-hidden className="size-4" />
+          {createLabel}
+        </Button>
+      )}
     </div>
   );
 }

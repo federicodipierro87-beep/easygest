@@ -6,6 +6,7 @@ import { SettingsLayout } from '@/components/SettingsLayout';
 import { CategoriesPage } from '@/pages/CategoriesPage';
 import { ClientsPage } from '@/pages/ClientsPage';
 import { DashboardPage } from '@/pages/DashboardPage';
+import { DueDatesPage } from '@/pages/DueDatesPage';
 import { ExpenseDetailPage } from '@/pages/ExpenseDetailPage';
 import { ExpensesPage } from '@/pages/ExpensesPage';
 import { LoginPage } from '@/pages/LoginPage';
@@ -44,6 +45,7 @@ export function App() {
           <Route path="/" element={<DashboardPage />} />
           <Route path="/spese" element={<ExpensesPage />} />
           <Route path="/spese/:id" element={<ExpenseDetailPage />} />
+          <Route path="/scadenze" element={<DueDatesPage />} />
           <Route path="/clienti" element={<ClientsPage />} />
           <Route path="/fornitori" element={<VendorsPage />} />
           {/*

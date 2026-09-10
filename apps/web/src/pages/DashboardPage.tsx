@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router';
 
 import { useSession } from '@/hooks/use-session';
 import { ApiError, apiFetch } from '@/lib/api';
@@ -81,8 +82,20 @@ export function DashboardPage() {
         </div>
       </section>
 
-      <p className="text-muted-foreground text-xs">
-        Anagrafiche attive. Spese ricorrenti e scadenze arrivano nella Fase 2.
+      {/*
+        Finché il riepilogo vero non c'è, due collegamenti sono più utili di
+        una frase che dice cosa manca: da qui si arriva dove si stava andando.
+      */}
+      <p className="text-muted-foreground text-sm">
+        Vai alle{' '}
+        <Link to="/spese" className="text-foreground underline underline-offset-4">
+          spese
+        </Link>{' '}
+        o alle{' '}
+        <Link to="/scadenze" className="text-foreground underline underline-offset-4">
+          scadenze
+        </Link>
+        .
       </p>
     </div>
   );
