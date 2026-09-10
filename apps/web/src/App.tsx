@@ -6,6 +6,7 @@ import { SettingsLayout } from '@/components/SettingsLayout';
 import { CategoriesPage } from '@/pages/CategoriesPage';
 import { ClientsPage } from '@/pages/ClientsPage';
 import { DashboardPage } from '@/pages/DashboardPage';
+import { ExpensesPage } from '@/pages/ExpensesPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { PaymentMethodsPage } from '@/pages/PaymentMethodsPage';
 import { VendorsPage } from '@/pages/VendorsPage';
@@ -40,6 +41,7 @@ export function App() {
           }
         >
           <Route path="/" element={<DashboardPage />} />
+          <Route path="/spese" element={<ExpensesPage />} />
           <Route path="/clienti" element={<ClientsPage />} />
           <Route path="/fornitori" element={<VendorsPage />} />
           {/*

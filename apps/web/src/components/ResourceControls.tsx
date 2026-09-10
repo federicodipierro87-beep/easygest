@@ -2,6 +2,7 @@ import type { ArchivedFilter } from '@easygest/shared';
 import { Plus, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import type { SelectOption } from '@/components/FormField';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -68,6 +69,41 @@ export function ResourceToolbar({
         {createLabel}
       </Button>
     </div>
+  );
+}
+
+interface FilterSelectProps {
+  /** Non c'è un'etichetta visibile: il valore scelto è già il nome del filtro. */
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: readonly SelectOption[];
+  className?: string;
+}
+
+/**
+ * Una tendina di filtro, senza etichetta sopra.
+ *
+ * `SelectField` non va bene qui: nei moduli l'etichetta ci vuole sempre, in una
+ * barra di comandi occuperebbe una riga per dire «Stato» sopra a una tendina
+ * che dice già «Attiva». L'etichetta resta però per chi non la vede, in
+ * `aria-label`, perché un lettore di schermo su quattro tendine di fila
+ * annuncerebbe altrimenti solo quattro valori senza dire di cosa.
+ */
+export function FilterSelect({ label, value, onChange, options, className }: FilterSelectProps) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className={className ?? 'w-40'} aria-label={label}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 

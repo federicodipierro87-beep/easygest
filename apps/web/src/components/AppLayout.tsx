@@ -8,6 +8,9 @@ import { cn } from '@/lib/utils';
 
 const SECTIONS = [
   { to: '/', label: 'Riepilogo' },
+  // Senza `end`, resta evidenziata anche sul dettaglio di una spesa: da lì non
+  // si è usciti dalla sezione, ci si è entrati dentro.
+  { to: '/spese', label: 'Spese' },
   { to: '/clienti', label: 'Clienti' },
   { to: '/fornitori', label: 'Fornitori' },
   // Una voce sola per categorie e metodi di pagamento: si configurano una

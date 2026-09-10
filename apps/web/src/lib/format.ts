@@ -1,4 +1,5 @@
 import {
+  RECURRENCE_UNIT_LABELS,
   addDays,
   centsToDecimalString,
   differenceInDays,
@@ -6,6 +7,7 @@ import {
   formatIsoDate,
   parseAmountToCents,
   parseIsoDate,
+  type RecurrenceUnit,
 } from '@easygest/shared';
 
 /**
@@ -115,6 +117,27 @@ export function describeDue(iso: string, today: string = todayIso()): string {
   if (days === -1) return 'ieri';
   if (days > 0) return `fra ${String(days)} giorni`;
   return `${String(-days)} giorni fa`;
+}
+
+/** Il plurale dell'unità, che serve solo quando l'intervallo non è uno. */
+const UNIT_PLURALS: Record<Exclude<RecurrenceUnit, 'ONE_OFF'>, string> = {
+  DAY: 'giorni',
+  WEEK: 'settimane',
+  MONTH: 'mesi',
+  YEAR: 'anni',
+};
+
+/**
+ * La ricorrenza in una riga di tabella.
+ *
+ * `RECURRENCE_UNIT_LABELS` da solo direbbe «Mensile» tanto per una spesa che
+ * arriva ogni mese quanto per una che arriva ogni tre, che è la stessa parola
+ * per due importi annui diversi. Con l'intervallo a uno resta l'aggettivo, che
+ * è più corto e si legge meglio.
+ */
+export function describeRecurrence(unit: RecurrenceUnit, interval: number): string {
+  if (unit === 'ONE_OFF' || interval === 1) return RECURRENCE_UNIT_LABELS[unit];
+  return `Ogni ${String(interval)} ${UNIT_PLURALS[unit]}`;
 }
 
 /**
