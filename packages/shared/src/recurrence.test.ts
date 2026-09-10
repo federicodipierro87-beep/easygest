@@ -10,6 +10,9 @@ import {
   firstIndexOnOrAfter,
   formatIsoDate,
   generateSchedule,
+  isValidTimeZone,
+  isoWeekKey,
+  isoWeekday,
   occurrenceDate,
   occurrencePeriod,
   parseIsoDate,
@@ -54,6 +57,45 @@ describe('giorni di calendario', () => {
     // UTC non esiste, ed è esattamente il motivo per cui le date stanno in UTC.
     expect(formatIsoDate(addDays(d('2027-03-27'), 1))).toBe('2027-03-28');
     expect(formatIsoDate(addDays(d('2027-10-30'), 1))).toBe('2027-10-31');
+  });
+});
+
+describe('settimana ISO', () => {
+  it('numera i giorni da luned\u00ec a domenica', () => {
+    expect(isoWeekday(d('2027-01-04'))).toBe(1); // lunedì
+    expect(isoWeekday(d('2027-01-10'))).toBe(7); // domenica, non zero
+  });
+
+  it('attribuisce la settimana all\u2019anno del suo gioved\u00ec', () => {
+    // I casi cattivi sono tutti a cavallo di capodanno, e sono due, opposti.
+    // Il 1° gennaio 2027 è un venerdì: la sua settimana è cominciata nel 2026 e
+    // il suo giovedì è il 31 dicembre, quindi appartiene al 2026.
+    expect(isoWeekKey(d('2027-01-01'))).toBe('2026-W53');
+    expect(isoWeekKey(d('2027-01-03'))).toBe('2026-W53');
+    expect(isoWeekKey(d('2027-01-04'))).toBe('2027-W01');
+
+    // E il rovescio: il 31 dicembre 2029 è un lunedì, il suo giovedì è già nel
+    // 2030, quindi la settimana è la prima del 2030.
+    expect(isoWeekKey(d('2029-12-31'))).toBe('2030-W01');
+    expect(isoWeekKey(d('2029-12-30'))).toBe('2029-W52');
+  });
+
+  it('d\u00e0 la stessa chiave a tutti i giorni della stessa settimana', () => {
+    // È la proprietà su cui poggia la deduplica del riepilogo: cambiare il
+    // giorno di invio non deve produrre un secondo riepilogo.
+    const week = ['2027-03-15', '2027-03-17', '2027-03-21'].map((value) => isoWeekKey(d(value)));
+    expect(new Set(week).size).toBe(1);
+    expect(week[0]).toBe('2027-W11');
+  });
+});
+
+describe('validit\u00e0 di un fuso', () => {
+  it('accetta i fusi veri, `UTC` compreso, e rifiuta il resto', () => {
+    expect(isValidTimeZone('Europe/Rome')).toBe(true);
+    expect(isValidTimeZone('UTC')).toBe(true);
+    expect(isValidTimeZone('America/Argentina/Ushuaia')).toBe(true);
+    expect(isValidTimeZone('Europa/Roma')).toBe(false);
+    expect(isValidTimeZone('')).toBe(false);
   });
 });
 

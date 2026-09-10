@@ -6,5 +6,6 @@ export * from './fiscal';
 export * from './money';
 export * from './payment-methods';
 export * from './recurrence';
+export * from './reminders';
 export * from './resources';
 export * from './vendors';

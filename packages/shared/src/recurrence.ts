@@ -137,8 +137,56 @@ export function todayIn(timeZone: string, now: Date): Date {
   return parsed;
 }
 
+/**
+ * Il fuso è utilizzabile?
+ *
+ * Prova a costruire un formattatore e guarda se esplode. `Intl.supportedValuesOf`
+ * sarebbe più severo, ma alloca seicento stringhe a ogni chiamata e rifiuta
+ * `UTC`, che è un fuso legittimo e quello con cui gira il container. Il
+ * `try/catch` accetta esattamente ciò che poi funzionerà in `todayIn`, che è
+ * l'unica proprietà che serve davvero: validare qui e fallire là sarebbe la
+ * combinazione peggiore.
+ */
+export function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-CA', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function addDays(date: Date, days: number): Date {
   return new Date(startOfUtcDay(date).getTime() + days * MS_PER_DAY);
+}
+
+/** Giorno della settimana ISO: 1 è lunedì, 7 è domenica. */
+export function isoWeekday(date: Date): number {
+  const day = startOfUtcDay(date).getUTCDay();
+  // `getUTCDay` mette la domenica a zero; ISO 8601 la mette in fondo.
+  return day === 0 ? 7 : day;
+}
+
+/**
+ * La settimana ISO come `2027-W01`, chiave stabile per il riepilogo.
+ *
+ * Serve al digest, che dev'essere mandato una volta a settimana e non una volta
+ * al giorno: con la data come chiave, spostare il giorno del riepilogo da lunedì
+ * a mercoledì ne farebbe partire due nella stessa settimana.
+ *
+ * L'anno della settimana non è sempre l'anno della data, ed è la ragione per cui
+ * questa funzione esiste invece di un `getUTCFullYear()` in linea. Il 1° gennaio
+ * 2027 è un venerdì e appartiene alla settimana 53 del **2026**; il 31 dicembre
+ * 2029 è un lunedì e appartiene alla settimana 1 del **2030**. La regola ISO è
+ * che una settimana appartiene all'anno in cui cade il suo giovedì, e da lì si
+ * conta: il giovedì della settimana della data, poi quanti giorni lo separano
+ * dal primo giorno di quell'anno.
+ */
+export function isoWeekKey(date: Date): string {
+  const thursday = addDays(date, 4 - isoWeekday(date));
+  const year = thursday.getUTCFullYear();
+  const week = Math.floor(differenceInDays(utcDay(year, 1, 1), thursday) / 7) + 1;
+  return `${String(year).padStart(4, '0')}-W${String(week).padStart(2, '0')}`;
 }
 
 /** Differenza in giorni interi fra due giorni di calendario. */
