@@ -4,7 +4,11 @@ import { Archive, ArchiveRestore, ExternalLink, Pencil, Trash2 } from 'lucide-re
 import { useState } from 'react';
 
 import { DeleteResourceDialog } from '@/components/DeleteResourceDialog';
-import { ResourcePagination, ResourceToolbar } from '@/components/ResourceControls';
+import {
+  ArchivedSelect,
+  ResourcePagination,
+  ResourceToolbar,
+} from '@/components/ResourceControls';
 import { VendorFormDialog } from '@/components/VendorFormDialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -88,17 +92,20 @@ export function VendorsPage() {
           setQuery(value);
           setPage(1);
         }}
-        archived={archived}
-        onArchivedChange={(value) => {
-          setArchived(value);
-          setPage(1);
-        }}
         placeholder="Cerca per nome, numero cliente, partita IVA o sito"
         onCreate={() => {
           openForm(null);
         }}
         createLabel="Nuovo fornitore"
-      />
+      >
+        <ArchivedSelect
+          value={archived}
+          onChange={(value) => {
+            setArchived(value);
+            setPage(1);
+          }}
+        />
+      </ResourceToolbar>
 
       {list.isError && (
         <p className="text-sm text-red-600">

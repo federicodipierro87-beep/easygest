@@ -1,5 +1,6 @@
 import type { ArchivedFilter } from '@easygest/shared';
 import { Plus, Search } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,29 +15,32 @@ import {
 /**
  * I comandi in cima e in fondo a un elenco.
  *
- * Ricerca, filtro degli archiviati e impaginazione non sanno cosa stanno
- * filtrando: sono gli stessi per clienti e fornitori e lo resteranno, perché
- * dipendono dalla forma della risposta dell'API e non dai campi della riga.
+ * Ricerca, filtri e impaginazione non sanno cosa stanno filtrando: dipendono
+ * dalla forma della risposta dell'API e non dai campi della riga.
+ *
+ * La frase sopra era vera a metà finché la barra teneva dentro il filtro degli
+ * archiviati, che è un campo — `isActive` — e che le spese non hanno: quelle
+ * cambiano stato, e i quattro stati non si riducono a un booleano. Ora i filtri
+ * entrano come figli, e la barra torna a sapere soltanto che ce ne sono.
  */
 
 interface ToolbarProps {
   query: string;
   onQueryChange: (value: string) => void;
-  archived: ArchivedFilter;
-  onArchivedChange: (value: ArchivedFilter) => void;
   placeholder: string;
   onCreate: () => void;
   createLabel: string;
+  /** I filtri propri di questo elenco, fra la ricerca e il pulsante. */
+  children?: ReactNode;
 }
 
 export function ResourceToolbar({
   query,
   onQueryChange,
-  archived,
-  onArchivedChange,
   placeholder,
   onCreate,
   createLabel,
+  children,
 }: ToolbarProps) {
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -57,27 +61,44 @@ export function ResourceToolbar({
         />
       </div>
 
-      <Select
-        value={archived}
-        onValueChange={(value) => {
-          onArchivedChange(value as ArchivedFilter);
-        }}
-      >
-        <SelectTrigger className="w-40" aria-label="Filtro archiviati">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="exclude">Attivi</SelectItem>
-          <SelectItem value="include">Tutti</SelectItem>
-          <SelectItem value="only">Archiviati</SelectItem>
-        </SelectContent>
-      </Select>
+      {children}
 
       <Button onClick={onCreate}>
         <Plus aria-hidden className="size-4" />
         {createLabel}
       </Button>
     </div>
+  );
+}
+
+interface ArchivedSelectProps {
+  value: ArchivedFilter;
+  onChange: (value: ArchivedFilter) => void;
+}
+
+/**
+ * Il filtro degli archiviati, per le quattro anagrafiche che ce l'hanno.
+ *
+ * Tre valori e non una casella da spuntare: la vista normale li nasconde, un
+ * «tutti» li aggiunge, e serve anche poterli vedere da soli per ripescarne uno.
+ */
+export function ArchivedSelect({ value, onChange }: ArchivedSelectProps) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        onChange(next as ArchivedFilter);
+      }}
+    >
+      <SelectTrigger className="w-40" aria-label="Filtro archiviati">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="exclude">Attivi</SelectItem>
+        <SelectItem value="include">Tutti</SelectItem>
+        <SelectItem value="only">Archiviati</SelectItem>
+      </SelectContent>
+    </Select>
   );
 }
 

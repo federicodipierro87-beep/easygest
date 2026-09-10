@@ -5,7 +5,11 @@ import { useState } from 'react';
 
 import { CategoryFormDialog } from '@/components/CategoryFormDialog';
 import { DeleteResourceDialog } from '@/components/DeleteResourceDialog';
-import { ResourcePagination, ResourceToolbar } from '@/components/ResourceControls';
+import {
+  ArchivedSelect,
+  ResourcePagination,
+  ResourceToolbar,
+} from '@/components/ResourceControls';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -108,17 +112,20 @@ export function CategoriesPage() {
           setQuery(value);
           setPage(1);
         }}
-        archived={archived}
-        onArchivedChange={(value) => {
-          setArchived(value);
-          setPage(1);
-        }}
         placeholder="Cerca per nome"
         onCreate={() => {
           openForm(null);
         }}
         createLabel="Nuova categoria"
-      />
+      >
+        <ArchivedSelect
+          value={archived}
+          onChange={(value) => {
+            setArchived(value);
+            setPage(1);
+          }}
+        />
+      </ResourceToolbar>
 
       {list.isError && (
         <p className="text-sm text-red-600">
