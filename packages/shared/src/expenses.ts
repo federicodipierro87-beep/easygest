@@ -72,6 +72,20 @@ export const EXPENSE_ERROR_CODES = {
 
 export type ExpenseErrorCode = (typeof EXPENSE_ERROR_CODES)[keyof typeof EXPENSE_ERROR_CODES];
 
+/**
+ * Cosa trattiene una spesa che non si può cancellare.
+ *
+ * Il codice è lo stesso `RESOURCE_IN_USE` delle anagrafiche, ma i dettagli no,
+ * ed è giusto che restino due tipi. Là trattengono due cose — spese e documenti
+ * — che si vanno a guardare da altre due pagine; qui ne trattiene una sola, e
+ * non sono le occorrenze in totale ma quelle già registrate, cioè quelle il cui
+ * stato non è più «prevista». Un tipo unico con tre campi facoltativi
+ * costringerebbe chi legge a indovinare quali sono valorizzati.
+ */
+export interface ExpenseInUseDetails {
+  occurrences: number;
+}
+
 /** Identificativo di una relazione, oppure niente. */
 const relationIdSchema = optionalText(z.string().trim().max(40));
 
