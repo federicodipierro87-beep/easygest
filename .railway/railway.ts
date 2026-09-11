@@ -130,6 +130,47 @@ export default defineRailway(() => {
       // giorno quel default cambiasse per distrazione, questa riga impedisce
       // che la conseguenza sia un endpoint di registrazione aperto al mondo.
       REGISTRATION_ENABLED: 'false',
+
+      /**
+       * Il giro notturno vive dentro questo servizio, non in un secondo.
+       *
+       * Era previsto un container separato per il cron; non lo è più. Un
+       * processo acceso ventiquattr'ore per lavorare due minuti al giorno non
+       * compra niente a un'applicazione con un utente, e i log distinti — che
+       * erano l'argomento a favore — si ottengono con `app.log.child({ job })`.
+       * Quello che invece compra è l'unica condizione da verificare in
+       * dashboard: «App Sleeping» dev'essere spento, perché un processo
+       * addormentato alle 07:00 non gira.
+       */
+      CRON_ENABLED: 'true',
+      CRON_TIMEZONE: 'Europe/Rome',
+
+      /**
+       * In produzione il trasporto è dichiarato invece di lasciarlo dedurre da
+       * `NODE_ENV`. Il default sarebbe già `resend`, ma scriverlo qui fa sì che
+       * una chiave mancante fermi il deploy — `superRefine`, exit 78 — invece
+       * di lasciare in piedi un'API che lavora tutto il giorno e scopre alle
+       * sette del mattino di non poter mandare niente.
+       */
+      MAIL_TRANSPORT: 'resend',
+
+      /**
+       * Come `JWT_SECRET`: il valore vero sta solo nella dashboard. Va
+       * impostato **prima** del primo `apply`, altrimenti «omit means delete»
+       * non c'entra niente ma il `superRefine` sì, e il servizio non parte.
+       */
+      RESEND_API_KEY: preserve(),
+
+      // Il dominio è quello condiviso di Resend: scrive solo al titolare
+      // dell'account, il che qui basta perché il destinatario è uno solo ed è
+      // lui. Il prezzo è la posta indesiderata, finché non si verifica un
+      // dominio proprio.
+      MAIL_FROM: 'EasyGest <onboarding@resend.dev>',
+
+      // I link dentro le email portano al frontend, non a questa API: è lo
+      // stesso indirizzo di `CORS_ORIGINS`, e se uno dei due cambia da solo si
+      // ottengono email che puntano al nulla.
+      APP_BASE_URL: 'https://easygest.netlify.app',
     },
   });
 
