@@ -1,9 +1,9 @@
+import type { JobName } from '@easygest/shared';
 import { Cron } from 'croner';
 import type { FastifyInstance } from 'fastify';
 
 import type { Env } from '../config/env';
 import { jobContext, runJob } from './runner';
-import type { JobName } from './types';
 
 /**
  * La pianificazione, dentro il processo dell'API.

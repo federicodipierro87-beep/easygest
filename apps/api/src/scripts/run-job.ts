@@ -1,7 +1,8 @@
+import { JOB_NAMES, isJobName } from '@easygest/shared';
+
 import { buildApp } from '../app';
 import { loadEnv } from '../config/env';
 import { jobContext, runJob } from '../jobs/runner';
-import { JOB_NAMES, isJobName } from '../jobs/types';
 
 /**
  * Esegue un lavoro pianificato, a mano.

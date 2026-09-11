@@ -1,8 +1,9 @@
+import type { JobName, JobResult } from '@easygest/shared';
 import type { FastifyInstance } from 'fastify';
 
 import type { Env } from '../config/env';
 import { type JobOptions, runDailyJob, runFxJob } from './daily';
-import type { JobContext, JobName, JobResult } from './types';
+import type { JobContext } from './types';
 
 /**
  * L'unica porta da cui si entra in un lavoro.

@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 
+import type { JobResult } from '@easygest/shared';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 
 import { buildApp } from '../app';
 import { signAccessToken } from '../auth/tokens';
 import { type Env, parseEnv } from '../config/env';
-import type { JobResult } from '../jobs/types';
 import type { Fetcher } from '../services/frankfurter';
 
 /**

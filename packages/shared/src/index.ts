@@ -3,6 +3,7 @@ export * from './categories';
 export * from './clients';
 export * from './expenses';
 export * from './fiscal';
+export * from './jobs';
 export * from './money';
 export * from './notifications';
 export * from './payment-methods';

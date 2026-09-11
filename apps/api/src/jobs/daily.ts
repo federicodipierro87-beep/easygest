@@ -1,4 +1,4 @@
-import { planReminders } from '@easygest/shared';
+import { type JobCounters, type JobResult, emptyCounters, planReminders } from '@easygest/shared';
 
 import { TRACKED_CURRENCIES, syncFxRates } from '../services/frankfurter';
 import { occurrenceContext } from '../services/occurrences';
@@ -6,7 +6,7 @@ import { collectReminderInput } from './collect';
 import { deliverReminders } from './deliver';
 import { runDigest } from './digest';
 import { runSweep } from './sweep';
-import { type JobContext, type JobCounters, type JobResult, emptyCounters } from './types';
+import type { JobContext } from './types';
 
 /**
  * Il giro notturno, in fila.

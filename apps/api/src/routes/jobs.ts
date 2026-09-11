@@ -1,9 +1,9 @@
+import { JOB_NAMES } from '@easygest/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
 import type { Env } from '../config/env';
 import { jobContext, runJob } from '../jobs/runner';
-import { JOB_NAMES } from '../jobs/types';
 import { parseBody } from '../lib/validation';
 import { requireUser } from '../plugins/auth';
 import type { Fetcher } from '../services/frankfurter';
