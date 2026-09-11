@@ -76,3 +76,74 @@ describe('parseEnv', () => {
     expect(() => parseEnv({})).toThrow(/DATABASE_URL/);
   });
 });
+
+describe('lavori pianificati', () => {
+  it('tiene spento il cron finché non lo si accende esplicitamente', () => {
+    // A differenza del resto della configurazione, il giro notturno *scrive*:
+    // marca PAID le scadenze arretrate e manda email. Acceso per distrazione
+    // su una copia del database di produzione farebbe danni silenziosi.
+    expect(parseEnv(required).CRON_ENABLED).toBe(false);
+    expect(parseEnv({ ...required, CRON_ENABLED: 'true' }).CRON_ENABLED).toBe(true);
+  });
+
+  it('rifiuta un valore ambiguo per CRON_ENABLED', () => {
+    expect(() => parseEnv({ ...required, CRON_ENABLED: 'si' })).toThrow(EnvValidationError);
+  });
+
+  it('usa l’ora italiana e rifiuta un fuso inventato', () => {
+    expect(parseEnv(required).CRON_TIMEZONE).toBe('Europe/Rome');
+    expect(parseEnv({ ...required, CRON_TIMEZONE: 'UTC' }).CRON_TIMEZONE).toBe('UTC');
+    expect(() => parseEnv({ ...required, CRON_TIMEZONE: 'Europe/Atlantide' })).toThrow(
+      /CRON_TIMEZONE/,
+    );
+  });
+
+  it('aspetta venti secondi prima del giro di recupero', () => {
+    expect(parseEnv(required).CRON_CATCHUP_DELAY_MS).toBe(20_000);
+    expect(parseEnv({ ...required, CRON_CATCHUP_DELAY_MS: '0' }).CRON_CATCHUP_DELAY_MS).toBe(0);
+  });
+
+  it('pota le notifiche lette dopo sei mesi', () => {
+    expect(parseEnv(required).NOTIFICATION_RETENTION_DAYS).toBe(180);
+  });
+});
+
+describe('posta', () => {
+  it('lascia scegliere il trasporto a createMailer quando nessuno lo impone', () => {
+    // Il default dipende da NODE_ENV e vive in `createMailer`: scriverlo anche
+    // qui significherebbe avere due copie della stessa regola, e la seconda
+    // finirebbe per divergere.
+    expect(parseEnv(required).MAIL_TRANSPORT).toBeUndefined();
+  });
+
+  it('rifiuta un trasporto che non esiste', () => {
+    expect(() => parseEnv({ ...required, MAIL_TRANSPORT: 'smtp' })).toThrow(/MAIL_TRANSPORT/);
+  });
+
+  it('non parte con Resend senza chiave', () => {
+    // Fallire all'avvio è il punto: altrimenti l'applicazione lavora tutto il
+    // giorno e scopre di non poter mandare niente alle sette del mattino.
+    expect(() => parseEnv({ ...required, MAIL_TRANSPORT: 'resend' })).toThrow(/RESEND_API_KEY/);
+    expect(
+      parseEnv({ ...required, MAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_test' }).RESEND_API_KEY,
+    ).toBe('re_test');
+  });
+
+  it('parte senza chiave con gli altri trasporti', () => {
+    // In sviluppo si lavora sull'applicazione, non sulle email: pretendere una
+    // chiave di Resend per avviare il server locale sarebbe un pedaggio inutile.
+    expect(parseEnv({ ...required, MAIL_TRANSPORT: 'log' }).RESEND_API_KEY).toBeUndefined();
+  });
+
+  it('ha un mittente e una radice per i link', () => {
+    const env = parseEnv(required);
+    expect(env.MAIL_FROM).toContain('@');
+    expect(env.APP_BASE_URL).toBe('http://localhost:5173');
+  });
+
+  it('pretende che APP_BASE_URL sia un URL', () => {
+    // Finisce concatenato ai percorsi dentro le email: un valore come
+    // "easygest.it" produrrebbe link rotti in tutti i messaggi inviati.
+    expect(() => parseEnv({ ...required, APP_BASE_URL: 'easygest.it' })).toThrow(/APP_BASE_URL/);
+  });
+});

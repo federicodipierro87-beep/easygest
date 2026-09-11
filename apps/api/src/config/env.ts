@@ -1,3 +1,4 @@
+import { isValidTimeZone } from '@easygest/shared';
 import { z } from 'zod';
 
 /**
@@ -78,6 +79,98 @@ const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+
+  /**
+   * Accende il giro notturno.
+   *
+   * Il default è `false` — e in locale va lasciato lì — perché a differenza di
+   * tutto il resto della configurazione questo giro **scrive**: marca `PAID` le
+   * scadenze arretrate, crea notifiche, manda email. Un cron acceso per
+   * distrazione su una copia del database di produzione farebbe danni veri e
+   * silenziosi.
+   */
+  CRON_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
+  /**
+   * Fuso in cui si interpretano gli orari del cron.
+   *
+   * Non è `Settings.timezone`, e le due cose vanno tenute distinte: questa
+   * decide *a che ora arriva l'email*, quella decide *quale giorno è* per i
+   * conti. Ogni utente viene elaborato con il proprio `occurrenceContext`,
+   * quindi se divergessero l'unico effetto sarebbe un'email a un'ora strana,
+   * mai una scadenza contata nel giorno sbagliato.
+   */
+  CRON_TIMEZONE: z
+    .string()
+    .min(1)
+    .default('Europe/Rome')
+    .refine(isValidTimeZone, 'fuso orario sconosciuto'),
+
+  /**
+   * Quanto si aspetta, dall'avvio, prima del giro di recupero.
+   *
+   * A ogni avvio si rifà il giro giornaliero: la pipeline è idempotente per
+   * costruzione, quindi tre deploy in un pomeriggio producono tre giri e zero
+   * effetti, e in cambio un rilascio alle 07:05 non salta la giornata. I venti
+   * secondi servono a non far competere il primo giro con l'healthcheck
+   * `/ready`, che è ciò che decide se promuovere la release.
+   */
+  CRON_CATCHUP_DELAY_MS: z.coerce.number().int().min(0).max(600_000).default(20_000),
+
+  /**
+   * Come partono le email.
+   *
+   * Facoltativa: il default vero lo risolve `createMailer` da `NODE_ENV`
+   * (`production` → `resend`, `test` → `memory`, altrimenti `log`). Metterlo
+   * qui significherebbe scrivere due volte la stessa regola, e la seconda
+   * finirebbe per divergere.
+   */
+  MAIL_TRANSPORT: z.enum(['resend', 'log', 'memory']).optional(),
+
+  /**
+   * Chiave di Resend. Obbligatoria solo con il trasporto `resend`: vedi il
+   * `superRefine` in fondo allo schema.
+   */
+  RESEND_API_KEY: z.string().min(1).optional(),
+
+  /**
+   * Mittente delle email.
+   *
+   * Il default è il dominio condiviso di Resend, che funziona senza configurare
+   * DNS ma scrive **solo** al titolare dell'account: va benissimo per provare,
+   * non per un secondo destinatario.
+   */
+  MAIL_FROM: z.string().min(1).default('EasyGest <onboarding@resend.dev>'),
+
+  /** Radice dei link dentro le email. Punta al frontend, non a questa API. */
+  APP_BASE_URL: z.url().default('http://localhost:5173'),
+
+  /**
+   * Dopo quanti giorni si potano le notifiche **lette**.
+   *
+   * Solo quelle: una non letta è una cosa che l'utente non ha ancora visto, e
+   * cancellarla significherebbe decidere al posto suo. I `ReminderLog` non si
+   * potano mai, perché sono la memoria della deduplica: buttarli rimanderebbe
+   * email già inviate.
+   */
+  NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
+});
+
+const envSchemaWithRules = envSchema.superRefine((value, ctx) => {
+  // Il controllo sta qui e non in `RESEND_API_KEY` perché dipende da un altro
+  // campo. Fallire all'avvio è il punto: senza, l'applicazione parte, lavora
+  // tutto il giorno e scopre di non poter mandare niente alle sette del
+  // mattino, quando nessuno legge i log.
+  if (value.MAIL_TRANSPORT === 'resend' && value.RESEND_API_KEY === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['RESEND_API_KEY'],
+      message: 'obbligatoria quando MAIL_TRANSPORT è resend',
+    });
+  }
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -90,7 +183,7 @@ export class EnvValidationError extends Error {
 }
 
 export function parseEnv(source: Record<string, string | undefined>): Env {
-  const result = envSchema.safeParse(source);
+  const result = envSchemaWithRules.safeParse(source);
   if (!result.success) {
     throw new EnvValidationError(
       result.error.issues.map((issue) => {
