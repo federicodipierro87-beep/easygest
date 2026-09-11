@@ -2,6 +2,7 @@ import type { FastifyBaseLogger } from 'fastify';
 
 import type { AppPrismaClient } from '../db/client';
 import type { Mailer } from '../mail';
+import type { Fetcher } from '../services/frankfurter';
 
 /**
  * Le forme comuni ai lavori pianificati.
@@ -36,6 +37,15 @@ export interface JobContext {
   baseUrl: string;
   /** Dopo quanti giorni si cancellano le notifiche già lette. */
   notificationRetentionDays: number;
+  /**
+   * Da dove arrivano i tassi.
+   *
+   * Opzionale, e nei test è l'unica ragione per cui esiste: il giro giornaliero
+   * comincia chiamando la BCE, e una suite che esce in rete fallisce in aereo,
+   * in CI dietro un proxy e il giorno in cui Frankfurter è giù — cioè fallisce
+   * per ragioni che non hanno niente a che vedere con ciò che sta provando.
+   */
+  fetcher?: Fetcher;
 }
 
 /**
