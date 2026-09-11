@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
+import { NotificationsBell } from '@/components/NotificationsBell';
 import { Button } from '@/components/ui/button';
 import { useSession } from '@/hooks/use-session';
 import { logout } from '@/lib/session';
@@ -65,6 +66,9 @@ export function AppLayout() {
           </nav>
 
           <div className="ml-auto flex items-center gap-3">
+            {/* Prima del nome e non dopo «Esci»: è un comando che si usa, non
+                un'etichetta, e sta accanto agli altri comandi. */}
+            <NotificationsBell />
             <span className="text-muted-foreground hidden text-sm sm:inline">
               {session.user?.displayName ?? ''}
             </span>
