@@ -10,10 +10,10 @@ import { TRACKED_CURRENCIES, syncFxRates } from '../services/frankfurter';
  * `npm run fx:sync -w @easygest/api`, oppure con una data:
  * `npm run fx:sync -w @easygest/api -- 2027-03-15`.
  *
- * In Fase 4 la stessa funzione verrà chiamata dal servizio cron a orario. Lo
- * script resta comunque, perché riempire un buco lasciato da qualche giorno di
- * disservizio è un'operazione che si fa a mano e che non vale la pena di
- * inventare quel giorno lì.
+ * La stessa funzione la chiama ora il lavoro `fx` a orario, e `jobs:run -- fx`
+ * la lancia a mano senza data. Questo script resta perché fa l'unica cosa che
+ * gli altri due non sanno fare: chiedere un **giorno preciso**, che è ciò che
+ * serve per riempire un buco lasciato da qualche giorno di disservizio.
  */
 async function main(): Promise<void> {
   const env = loadEnv();

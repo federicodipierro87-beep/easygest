@@ -17,6 +17,7 @@
     "seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx prisma/seed-demo.ts",
     "fx:sync": "tsx --env-file-if-exists=.env src/scripts/sync-fx.ts",
+    "jobs:run": "tsx --env-file-if-exists=.env src/scripts/run-job.ts",
     "postinstall": "prisma generate"
   },
   "devDependencies": {
