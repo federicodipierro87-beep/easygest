@@ -12,11 +12,17 @@ import {
   autoPaidKey,
   cancellationWindowKey,
   cardExpiringKey,
+  composeAutoPaidMessage,
+  composeDigest,
+  composeReminderMessage,
+  describeDaysRemaining,
   digestKey,
   expenseDueKey,
+  isDigestEmpty,
   lastValidDay,
   pickDaysBefore,
   planReminders,
+  reminderPath,
 } from './reminders';
 
 const d = (value: string): Date => {
@@ -363,6 +369,131 @@ describe('carta in scadenza', () => {
     expect(
       plan('2027-03-01', { paymentMethods: [aCard({ expiryMonth: null, expiryYear: null })] }),
     ).toEqual([]);
+  });
+});
+
+describe('testi degli avvisi', () => {
+  it('dice gli anticipi come li direbbe una persona', () => {
+    expect(describeDaysRemaining(0)).toBe('oggi');
+    expect(describeDaysRemaining(1)).toBe('domani');
+    expect(describeDaysRemaining(7)).toBe('fra 7 giorni');
+    expect(describeDaysRemaining(-1)).toBe('da 1 giorno');
+    expect(describeDaysRemaining(-3)).toBe('da 3 giorni');
+  });
+
+  it('nomina la cosa nel titolo quando l\u2019avviso \u00e8 uno solo', () => {
+    const [reminder] = plan('2027-03-08', {
+      occurrences: [anOccurrence('2027-03-15', { grossCents: 1200 })],
+    });
+    const message = composeReminderMessage('EXPENSE_DUE', reminder === undefined ? [] : [reminder]);
+
+    // Oggetto e titolo sono la stessa frase: sono la cosa che si legge senza
+    // aprire niente, e due frasi diverse sembrerebbero due avvisi.
+    expect(message.subject).toBe('Scadenza in arrivo: Hosting (fra 7 giorni)');
+    expect(message.title).toBe(message.subject);
+    expect(message.text).toContain('- Hosting (12,00\u00a0\u20ac): scade il 2027-03-15, fra 7 giorni');
+  });
+
+  it('conta invece di nominare quando gli avvisi sono pi\u00f9 d\u2019uno', () => {
+    const reminders = plan('2027-03-08', {
+      occurrences: [
+        anOccurrence('2027-03-15', { id: 'occ1', expenseName: 'Hosting' }),
+        anOccurrence('2027-03-14', { id: 'occ2', expenseName: 'Dominio' }),
+      ],
+    });
+    const message = composeReminderMessage('EXPENSE_DUE', reminders);
+
+    expect(message.subject).toBe('2 scadenze in arrivo');
+    // L'ordine del testo è quello del motore: due giri identici devono
+    // produrre due email identiche, non due permutazioni.
+    expect(message.text.indexOf('Dominio')).toBeLessThan(message.text.indexOf('Hosting'));
+  });
+
+  it('dice della disdetta sia il termine sia il rinnovo', () => {
+    const [reminder] = plan('2026-12-15', {
+      occurrences: [
+        anOccurrence('2027-03-15', { grossCents: 12_000, expense: { cancellationNoticeDays: 60 } }),
+      ],
+    });
+    const message = composeReminderMessage(
+      'CANCELLATION_WINDOW',
+      reminder === undefined ? [] : [reminder],
+    );
+
+    // Senza il rinnovo il termine è una data qualunque: è il «altrimenti» a
+    // spiegare perché quella data conta.
+    expect(message.text).toContain('disdici entro il 2027-01-14, fra 30 giorni');
+    expect(message.text).toContain('altrimenti si rinnova il 2027-03-15 per 120,00\u00a0\u20ac');
+  });
+
+  it('mette il link solo quando gli si d\u00e0 una radice', () => {
+    const reminders = plan('2027-03-01', { paymentMethods: [aCard()] });
+
+    // In-app il link non serve: si è già dentro l'applicazione.
+    expect(composeReminderMessage('CARD_EXPIRING', reminders).text).not.toContain('http');
+    expect(
+      composeReminderMessage('CARD_EXPIRING', reminders, { baseUrl: 'https://easygest.app' }).text,
+    ).toContain('https://easygest.app/impostazioni/metodi-di-pagamento');
+  });
+
+  it('manda ogni genere dove si pu\u00f2 fare qualcosa', () => {
+    expect(reminderPath('EXPENSE_DUE')).toBe('/scadenze');
+    expect(reminderPath('CANCELLATION_WINDOW')).toBe('/scadenze');
+    expect(reminderPath('CARD_EXPIRING')).toBe('/impostazioni/metodi-di-pagamento');
+  });
+
+  it('accorda il numero nelle auto-pagate', () => {
+    expect(composeAutoPaidMessage(1).title).toBe('1 scadenza marcata pagata, da confermare');
+    expect(composeAutoPaidMessage(4).title).toBe('4 scadenze marcate pagate, da confermare');
+    // Il corpo dice cosa fare, non solo cos'è successo: senza la conferma, un
+    // aumento di prezzo passerebbe senza che nessuno lo veda.
+    expect(composeAutoPaidMessage(4).body).toContain('confermale');
+  });
+});
+
+describe('riepilogo settimanale', () => {
+  const line = (label: string, date: string, grossCents = 1200) => ({
+    label,
+    date: d(date),
+    grossCents,
+    currency: 'EUR',
+  });
+
+  const empty = { upcoming: [], cancellations: [], toConfirm: [], overdue: [] };
+
+  it('riconosce il riepilogo vuoto', () => {
+    expect(isDigestEmpty(empty)).toBe(true);
+    expect(isDigestEmpty({ ...empty, overdue: [line('Hosting', '2027-03-01')] })).toBe(false);
+  });
+
+  it('mette i conteggi nell\u2019oggetto', () => {
+    // «Riepilogo settimanale» non dice se valga la pena aprirlo; i conteggi sì.
+    const digest = composeDigest({
+      upcoming: [line('Hosting', '2027-03-15'), line('Dominio', '2027-03-18')],
+      cancellations: [],
+      toConfirm: [line('Newsletter', '2027-03-01')],
+      overdue: [],
+    });
+    expect(digest.subject).toBe('Riepilogo: 2 scadenze in arrivo, 1 da confermare');
+  });
+
+  it('salta le sezioni vuote invece di dichiararle vuote', () => {
+    const digest = composeDigest({
+      ...empty,
+      overdue: [line('Hosting', '2027-02-01')],
+    });
+    expect(digest.text).toContain('In ritardo');
+    expect(digest.text).toContain('- Hosting (12,00\u00a0\u20ac): scaduta il 2027-02-01');
+    expect(digest.text).not.toContain('In scadenza nei prossimi sette giorni');
+    expect(digest.text).not.toContain('Marcate pagate');
+  });
+
+  it('lega il termine di disdetta al rinnovo che lo motiva', () => {
+    const digest = composeDigest({
+      ...empty,
+      cancellations: [{ ...line('Hosting', '2027-01-14', 12_000), renewsOn: d('2027-03-15') }],
+    });
+    expect(digest.text).toContain('- Hosting: entro il 2027-01-14, rinnovo il 2027-03-15');
   });
 });
 

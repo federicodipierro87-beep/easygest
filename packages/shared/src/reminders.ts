@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import type { ExpenseStatus, OccurrenceStatus } from './expenses';
+import { formatCents } from './money';
 import { expiresBefore } from './payment-methods';
 import {
   addDays,
@@ -471,4 +472,285 @@ export function planReminders(input: PlanRemindersInput): PlannedReminder[] {
       a.kind.localeCompare(b.kind) ||
       a.label.localeCompare(b.label, 'it'),
   );
+}
+
+/**
+ * I testi.
+ *
+ * Stanno qui, accanto al motore, e non nel pacchetto che manda le email: sono
+ * funzioni pure che da un elenco di avvisi ricavano delle stringhe, quindi si
+ * provano con gli stessi test del motore, senza mailer e senza database. Il
+ * giorno in cui una frase cambia, il test che la controlla è nello stesso file
+ * della regola che l'ha fatta scattare.
+ *
+ * Niente MJML né React Email: un template literal per il testo, e venti righe di
+ * HTML dall'altra parte, bastano per quattro tipi di messaggio. Una libreria di
+ * template porterebbe una dipendenza, una fase di build e un formato in più da
+ * imparare, per ottenere lo stesso paragrafo.
+ */
+
+export interface ReminderMessage {
+  /** Oggetto dell'email. */
+  subject: string;
+  /** Titolo della notifica in-app: la riga che si legge nell'elenco. */
+  title: string;
+  /**
+   * Il corpo, identico per email e notifica.
+   *
+   * Non è la versione di ripiego dell'HTML: è quella che si legge
+   * dall'anteprima sul telefono, ed è la stessa che finisce in
+   * `Notification.body`. Scriverla per seconda produrrebbe due testi che
+   * divergono, e quello trascurato sarebbe proprio quello che la gente legge.
+   */
+  text: string;
+}
+
+export interface ReminderMessageOptions {
+  /**
+   * La radice dei link, da `APP_BASE_URL`.
+   *
+   * Assente di proposito per le notifiche in-app: sono già dentro
+   * l'applicazione, e un URL assoluto in mezzo al testo sarebbe un invito a
+   * uscire e rientrare da dove si è già.
+   */
+  baseUrl?: string;
+}
+
+/** «oggi», «domani», «fra 7 giorni»: come si dice un anticipo in italiano. */
+export function describeDaysRemaining(days: number): string {
+  if (days < 0) return `da ${String(-days)} ${days === -1 ? 'giorno' : 'giorni'}`;
+  if (days === 0) return 'oggi';
+  if (days === 1) return 'domani';
+  return `fra ${String(days)} giorni`;
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${String(count)} ${count === 1 ? one : many}`;
+}
+
+/** Dove si va a fare qualcosa a proposito di un avviso di questo genere. */
+export function reminderPath(kind: ReminderTargetKind): string {
+  return kind === 'CARD_EXPIRING' ? '/impostazioni/metodi-di-pagamento' : '/scadenze';
+}
+
+/** La riga che descrive un singolo avviso dentro un elenco. */
+function reminderLine(reminder: PlannedReminder): string {
+  const when = describeDaysRemaining(reminder.daysRemaining);
+  const amount =
+    reminder.grossCents === null
+      ? null
+      : formatCents(reminder.grossCents, { currency: reminder.currency ?? 'EUR' });
+
+  switch (reminder.kind) {
+    case 'EXPENSE_DUE':
+      return `- ${reminder.label}${amount === null ? '' : ` (${amount})`}: scade il ${formatIsoDate(reminder.referenceDate)}, ${when}`;
+    case 'CANCELLATION_WINDOW': {
+      const renewal =
+        reminder.dueDate === null
+          ? ''
+          : `, altrimenti si rinnova il ${formatIsoDate(reminder.dueDate)}${amount === null ? '' : ` per ${amount}`}`;
+      return `- ${reminder.label}: disdici entro il ${formatIsoDate(reminder.referenceDate)}, ${when}${renewal}`;
+    }
+    case 'CARD_EXPIRING':
+      return `- ${reminder.label}: valida fino al ${formatIsoDate(reminder.referenceDate)}, scade ${when}`;
+  }
+}
+
+/** Il titolo di un elenco di più avvisi dello stesso genere. */
+function reminderHeading(kind: ReminderTargetKind, count: number): string {
+  switch (kind) {
+    case 'EXPENSE_DUE':
+      return `${plural(count, 'scadenza', 'scadenze')} in arrivo`;
+    case 'CANCELLATION_WINDOW':
+      return `${plural(count, 'disdetta', 'disdette')} da decidere`;
+    case 'CARD_EXPIRING':
+      return `${plural(count, 'carta', 'carte')} in scadenza`;
+  }
+}
+
+/** La riga d'apertura: cosa fare, detto una volta per tutto l'elenco. */
+function reminderCallToAction(kind: ReminderTargetKind): string {
+  switch (kind) {
+    case 'EXPENSE_DUE':
+      return 'Segna come pagate quelle che hai già saldato, così spariscono dal prossimo promemoria.';
+    case 'CANCELLATION_WINDOW':
+      return 'Passata questa data il contratto si rinnova, e si paga un altro periodo intero.';
+    case 'CARD_EXPIRING':
+      return 'Aggiorna la carta prima della scadenza: gli addebiti agganciati falliranno in silenzio.';
+  }
+}
+
+/**
+ * Il messaggio di un gruppo di avvisi dello stesso genere.
+ *
+ * Un elenco e non un messaggio per avviso: cinque scadenze nella stessa
+ * settimana produrrebbero cinque email che dicono la stessa cosa, e la quinta
+ * non verrebbe letta. In-app invece resta una riga per avviso, perché lì
+ * l'elenco c'è già ed è la pagina stessa — quindi la notifica singola si ottiene
+ * chiamando questa funzione con un elenco di uno, e il testo è lo stesso.
+ *
+ * L'oggetto dell'email e il titolo della notifica sono la stessa frase, di
+ * proposito: sono la cosa che si legge senza aprire niente, e due frasi diverse
+ * per lo stesso avviso lo farebbero sembrare due avvisi.
+ */
+export function composeReminderMessage(
+  kind: ReminderTargetKind,
+  reminders: readonly PlannedReminder[],
+  options: ReminderMessageOptions = {},
+): ReminderMessage {
+  const only = reminders.length === 1 ? reminders[0] : undefined;
+  const heading =
+    only === undefined
+      ? reminderHeading(kind, reminders.length)
+      : `${REMINDER_KIND_LABELS[kind]}: ${only.label} (${describeDaysRemaining(only.daysRemaining)})`;
+
+  const text = [
+    reminderCallToAction(kind),
+    '',
+    ...reminders.map(reminderLine),
+    ...(options.baseUrl === undefined ? [] : ['', `${options.baseUrl}${reminderPath(kind)}`]),
+  ].join('\n');
+
+  return { subject: heading, title: heading, text };
+}
+
+/**
+ * La notifica delle scadenze che il cron ha marcato pagate da solo.
+ *
+ * Raggruppata e non una per scadenza: lo sweep può marcarne dieci in un giro —
+ * il primo giorno su dati veri anche molte di più — e dieci notifiche identiche
+ * renderebbero inutile la campanella proprio il giorno in cui serve.
+ *
+ * Solo in-app. Un'email per dire «ho fatto il mio lavoro» è rumore, ma la riga
+ * in elenco serve, perché è da lì che si arriva alle scadenze da confermare.
+ */
+export function composeAutoPaidMessage(count: number): { title: string; body: string } {
+  return {
+    title: `${plural(count, 'scadenza marcata pagata', 'scadenze marcate pagate')}, da confermare`,
+    body:
+      count === 1
+        ? 'Una scadenza con rinnovo automatico è stata marcata pagata. Controlla che l’importo addebitato sia quello previsto, poi confermala.'
+        : `${String(count)} scadenze con rinnovo automatico sono state marcate pagate. Controlla che gli importi addebitati siano quelli previsti, poi confermale.`,
+  };
+}
+
+/** Una riga del riepilogo settimanale. */
+export interface DigestLine {
+  label: string;
+  /** La scadenza, oppure il termine di disdetta nella sezione che lo riguarda. */
+  date: Date;
+  grossCents: number;
+  currency: string;
+  /** Il rinnovo a cui il termine si riferisce. Solo nella sezione delle disdette. */
+  renewsOn?: Date | null;
+}
+
+/**
+ * Le quattro sezioni del riepilogo.
+ *
+ * `toConfirm` è quella che dà al riepilogo una ragione d'esistere oltre ai
+ * promemoria: le altre tre si potrebbero dedurre da avvisi già ricevuti, quella
+ * no. Sono le scadenze che il cron ha dato per pagate senza che nessuno abbia
+ * guardato, ed è l'unico posto in cui un aumento di prezzo salta all'occhio.
+ *
+ * `overdue` sono le previste già scadute, cioè quelle senza rinnovo automatico
+ * che lo sweep non tocca. Non ricevono un promemoria — a scadenza passata
+ * sarebbe un rimprovero — ma dentro un elenco settimanale ci stanno bene.
+ */
+export interface DigestSections {
+  /** Scadenze dei prossimi sette giorni. */
+  upcoming: DigestLine[];
+  /** Finestre di disdetta che si chiudono entro trenta giorni. */
+  cancellations: DigestLine[];
+  /** Marcate pagate dal cron e non ancora verificate da una persona. */
+  toConfirm: DigestLine[];
+  /** Previste e già scadute. */
+  overdue: DigestLine[];
+}
+
+/**
+ * Il riepilogo è vuoto?
+ *
+ * Un'email che dice «non c'è niente» una volta a settimana è il modo più
+ * efficace di far spegnere le notifiche. La riga di deduplica però si scrive lo
+ * stesso, altrimenti ogni riavvio dello stesso giorno ricontrollerebbe.
+ */
+export function isDigestEmpty(sections: DigestSections): boolean {
+  return (
+    sections.upcoming.length === 0 &&
+    sections.cancellations.length === 0 &&
+    sections.toConfirm.length === 0 &&
+    sections.overdue.length === 0
+  );
+}
+
+function digestSection(
+  heading: string,
+  lines: readonly DigestLine[],
+  render: (line: DigestLine) => string,
+): string[] {
+  if (lines.length === 0) return [];
+  return [heading, ...lines.map(render), ''];
+}
+
+/**
+ * Il riepilogo settimanale.
+ *
+ * Totali e confronti con la settimana prima non ci sono: arrivano con i report
+ * della Fase 5, che è dove vivranno le somme. Qui è un elenco di cose da fare,
+ * e un totale in cima lo farebbe sembrare un estratto conto.
+ *
+ * L'oggetto porta i conteggi invece di una data. È la riga che si legge dalla
+ * lista della posta, e «Riepilogo settimanale» non dice se valga la pena
+ * aprirlo, mentre «3 scadenze in arrivo, 2 da confermare» sì.
+ */
+export function composeDigest(
+  sections: DigestSections,
+  options: ReminderMessageOptions = {},
+): { subject: string; text: string } {
+  const counts = [
+    sections.upcoming.length === 0
+      ? null
+      : `${plural(sections.upcoming.length, 'scadenza', 'scadenze')} in arrivo`,
+    sections.cancellations.length === 0
+      ? null
+      : `${plural(sections.cancellations.length, 'disdetta', 'disdette')} da decidere`,
+    sections.toConfirm.length === 0 ? null : `${String(sections.toConfirm.length)} da confermare`,
+    sections.overdue.length === 0 ? null : `${String(sections.overdue.length)} in ritardo`,
+  ].filter((part): part is string => part !== null);
+
+  const amount = (line: DigestLine): string =>
+    formatCents(line.grossCents, { currency: line.currency });
+
+  const text = [
+    ...digestSection(
+      'In scadenza nei prossimi sette giorni',
+      sections.upcoming,
+      (line) => `- ${line.label} (${amount(line)}): ${formatIsoDate(line.date)}`,
+    ),
+    ...digestSection(
+      'Disdette da decidere entro trenta giorni',
+      sections.cancellations,
+      (line) =>
+        `- ${line.label}: entro il ${formatIsoDate(line.date)}${line.renewsOn == null ? '' : `, rinnovo il ${formatIsoDate(line.renewsOn)}`} (${amount(line)})`,
+    ),
+    ...digestSection(
+      'Marcate pagate, da confermare',
+      sections.toConfirm,
+      (line) => `- ${line.label} (${amount(line)}): ${formatIsoDate(line.date)}`,
+    ),
+    ...digestSection(
+      'In ritardo',
+      sections.overdue,
+      (line) => `- ${line.label} (${amount(line)}): scaduta il ${formatIsoDate(line.date)}`,
+    ),
+    ...(options.baseUrl === undefined ? [] : [`${options.baseUrl}/scadenze`]),
+  ]
+    .join('\n')
+    .trimEnd();
+
+  return {
+    subject: counts.length === 0 ? 'Riepilogo settimanale' : `Riepilogo: ${counts.join(', ')}`,
+    text,
+  };
 }
