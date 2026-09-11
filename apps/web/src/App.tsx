@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 import { AppLayout } from '@/components/AppLayout';
 import { RequireAuth } from '@/components/RequireAuth';
 import { SettingsLayout } from '@/components/SettingsLayout';
+import { AlertsSettingsPage } from '@/pages/AlertsSettingsPage';
 import { CategoriesPage } from '@/pages/CategoriesPage';
 import { ClientsPage } from '@/pages/ClientsPage';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -58,6 +59,7 @@ export function App() {
             <Route index element={<Navigate to="/impostazioni/categorie" replace />} />
             <Route path="categorie" element={<CategoriesPage />} />
             <Route path="metodi-di-pagamento" element={<PaymentMethodsPage />} />
+            <Route path="avvisi" element={<AlertsSettingsPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

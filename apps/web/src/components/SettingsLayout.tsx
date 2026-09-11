@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 const PAGES = [
   { to: '/impostazioni/categorie', label: 'Categorie' },
   { to: '/impostazioni/metodi-di-pagamento', label: 'Metodi di pagamento' },
+  { to: '/impostazioni/avvisi', label: 'Avvisi' },
 ];
 
 /**
