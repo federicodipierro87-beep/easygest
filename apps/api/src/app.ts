@@ -12,11 +12,13 @@ import { registerCategoryRoutes } from './routes/categories';
 import { registerClientRoutes } from './routes/clients';
 import { registerExpenseRoutes } from './routes/expenses';
 import { registerHealthRoutes } from './routes/health';
+import { registerJobRoutes } from './routes/jobs';
 import { registerNotificationRoutes } from './routes/notifications';
 import { registerOccurrenceRoutes } from './routes/occurrences';
 import { registerPaymentMethodRoutes } from './routes/payment-methods';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerVendorRoutes } from './routes/vendors';
+import type { Fetcher } from './services/frankfurter';
 
 /**
  * Formato unico delle risposte di errore.
@@ -91,7 +93,19 @@ function describeError(error: unknown): {
   return { statusCode: 500, code: 'INTERNAL_ERROR', message: 'Errore sconosciuto' };
 }
 
-export async function buildApp(env: Env): Promise<FastifyInstance> {
+/**
+ * Le dipendenze esterne che un test può sostituire.
+ *
+ * Ce n'è una sola, e non è una comodità: `POST /jobs/:name/run` lancia un giro
+ * vero, e il giro comincia chiamando la BCE. Il mailer risolve lo stesso
+ * problema da plugin, perché serve anche altrove; il `fetcher` dei cambi serve
+ * solo qui, e un parametro costa meno di un secondo plugin.
+ */
+export interface AppOverrides {
+  fxFetcher?: Fetcher;
+}
+
+export async function buildApp(env: Env, overrides: AppOverrides = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: buildLoggerOptions(env),
     genReqId: () => randomUUID(),
@@ -145,6 +159,7 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   registerOccurrenceRoutes(app);
   registerNotificationRoutes(app);
   registerSettingsRoutes(app);
+  registerJobRoutes(app, env, overrides.fxFetcher);
 
   app.setNotFoundHandler((request, reply) => {
     const body: ErrorResponse = {
