@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 
 import type { Env } from './config/env';
+import { mailerPlugin } from './mail';
 import { authPlugin } from './plugins/auth';
 import { prismaPlugin } from './plugins/prisma';
 import { registerSecurity } from './plugins/security';
@@ -131,6 +132,7 @@ export async function buildApp(env: Env): Promise<FastifyInstance> {
   await registerSecurity(app, env);
   await app.register(prismaPlugin, env);
   await app.register(authPlugin, env);
+  await app.register(mailerPlugin, env);
   registerHealthRoutes(app);
   registerAuthRoutes(app, env);
   registerClientRoutes(app);
