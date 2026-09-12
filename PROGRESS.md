@@ -14,7 +14,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | 1    | Auth, schema DB, migrazioni, seed, CRUD clienti/fornitori/categorie | ✅ Completata |
 | 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ✅ Completata |
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ✅ Completata |
-| 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ⬜ Da fare    |
+| 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ✅ Completata |
 | 5    | Dashboard, report, export CSV e PDF                                 | ⬜ Da fare    |
 | 6    | Previsioni e simulatore what-if                                     | ⬜ Da fare    |
 | 7    | Archivio documenti: upload R2, ricerca full-text, export ZIP        | ⬜ Da fare    |
@@ -41,6 +41,19 @@ risponde a «cosa pago per questo servizio» ma non a «cosa devo pagare», che 
 domanda quotidiana. Il backend non è stato toccato: la Fase 2 esponeva già tutto
 il necessario, e l'unica riga aggiunta a `packages/shared` è il tipo dei dettagli
 del rifiuto di cancellazione.
+
+La Fase 4 è chiusa ed è la prima che fa qualcosa **senza che nessuno apra
+l'applicazione**: un cron in-process alle 07:00 estende l'orizzonte delle
+occorrenze, marca pagate le arretrate con rinnovo automatico, manda i promemoria
+per email e in-app, e il lunedì il riepilogo settimanale. Non ha richiesto
+migrazioni: `ReminderLog`, `Notification` e i campi di `Settings` erano già stati
+disegnati per lei nella migrazione iniziale. Chiude anche il debito delle
+occorrenze che si materializzavano solo toccando la spesa.
+
+Due cose sono cambiate rispetto al piano originale e sono spiegate più sotto: il
+cron **non** è un secondo servizio Railway, e i promemoria hanno una regola di
+scatto («l'anticipo più vicino») invece di mandarne uno per ogni anticipo
+configurato.
 
 ---
 
@@ -338,6 +351,161 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
   con arrotondamento half-up. È l'unico modo per tenere la regola «mai virgola
   mobile sul denaro» scritta in un posto solo invece che ricordata a ogni
   chiamata.
+
+### Promemoria e notifiche
+
+- **Il motore dei promemoria è puro e sta in `packages/shared/src/reminders.ts`**,
+  nello stesso rapporto in cui `recurrence.ts` sta a `services/occurrences.ts`:
+  non conosce Prisma e non legge l'orologio, riceve `{ today, settings,
+occurrences, paymentMethods }` e restituisce `PlannedReminder[]`. Le query e la
+  mappatura delle righe stanno in `apps/api/src/jobs/collect.ts`. È il file più
+  provato della fase, e può esserlo perché non ha bisogno di un database.
+- **Scatta l'anticipo più vicino, non tutti quelli che soddisfano.** Con gli
+  anticipi `30, 7, 1` si sceglie il più piccolo ancora maggiore o uguale ai giorni
+  che mancano davvero. Le due alternative ovvie sbagliano entrambe: «tutti quelli
+  che soddisfano» manderebbe tre email insieme per una spesa inserita due giorni
+  prima della scadenza; «esattamente uguale» perderebbe il promemoria per sempre
+  se il processo è spento quel giorno. Col minimo applicabile un giro saltato si
+  fonde nel successivo, con una chiave di deduplica diversa. È anche la regola
+  meno indovinabile guardando l'interfaccia, per questo la pagina degli avvisi la
+  scrive a parole sotto il campo.
+- **La deduplica è una riga di database, non una decisione del codice.**
+  `ReminderLog.dedupeKey` è unica, la grammatica è
+  `GENERE:soggetto:qualificatore:CANALE` e un `P2002` è la risposta normale, non
+  un errore. Le chiavi delle scadenze sono ancorate all'**occorrenza** e non alla
+  spesa, così cambiare la ricorrenza — che rigenera le occorrenze future —
+  produce identità nuove, che è la risposta giusta. `CARD_EXPIRING` porta dentro
+  anche il mese, altrimenti correggere la scadenza di una carta da 03/2027 a
+  03/2029 non farebbe mai più avvisare quella carta. Il digest usa la **settimana
+  ISO**: con la data, spostare `digestDayOfWeek` da lunedì a mercoledì manderebbe
+  due riepiloghi nella stessa settimana.
+- **Il formato delle chiavi è provato con stringhe scritte a mano.** Sembra un
+  test fragile ed è voluto che lo sia: cambiare un separatore rende irriconoscibili
+  tutte le chiavi già scritte, cioè **rimanda tutte le email già inviate**. Meglio
+  un test che si lamenta.
+- **L'email si prenota prima di essere inviata.** Tre passi: si scrive il
+  `ReminderLog` con `succeeded: false`, si manda, si annota l'esito. L'ordine
+  inverso — scrivere dopo l'invio — sbaglia in modo peggiore: un crash a metà
+  rimanda la stessa email, e chi riceve due promemoria identici per la stessa
+  scadenza smette di fidarsi dei dati. Così invece se ne può perdere una, ma la
+  riga `succeeded = false` resta lì a raccontarlo e la notifica in-app è già stata
+  scritta prima. Fra «due volte» e «zero volte», zero è il danno minore ed è
+  l'unico recuperabile.
+- **In-app ed email non sono alternative: ogni avviso produce entrambi.** La
+  notifica è una riga in tabella, non può fallire e non dipende da nessun servizio
+  esterno, quindi è la rete di sicurezza se Resend è giù. L'email è il motivo per
+  cui l'applicazione esiste: avvisare quando non la si sta guardando. Non c'è un
+  interruttore per canale — chi non vuole le email svuota la lista degli anticipi,
+  che è più onesto di un interruttore che lascia credere che qualcosa stia ancora
+  arrivando.
+- **Tutta la pipeline è idempotente per costruzione, e ci si appoggia tre volte:**
+  per il recupero all'avvio (si rifà il giro a ogni deploy, senza tenere un
+  registro di «l'ho già fatto oggi»), per il pulsante «Esegui adesso» (premerlo
+  due volte non manda niente due volte) e per non doversi fidare del fatto che il
+  cron sia partito una volta sola. Il test che vale la fase è due `runDailyJob` di
+  fila con gli stessi argomenti e `expect(mailer.sent).toHaveLength(1)`.
+- **Lo scheduler parte in `index.ts`, non in `buildApp`.** `buildApp` è chiamata
+  da una ventina di test di integrazione: un cron avviato lì dentro sarebbe una
+  corsa contro la suite, e marcherebbe `PAID` occorrenze di prova mentre un test
+  le conta. Un flag non sarebbe una garanzia, perché `vitest.setup.ts` legge
+  `apps/api/.env`; così invece la garanzia è strutturale, i test non eseguono mai
+  quel file. Il **mailer** sta dentro `buildApp`, perché serve anche alla rotta
+  manuale e nei test dev'essere sostituibile.
+- **`CRON_TIMEZONE` e `Settings.timezone` sono due cose diverse.** La prima decide
+  _a che ora_ arriva l'email, la seconda _quale giorno è_ per i conti: ogni utente
+  viene elaborato con il proprio `occurrenceContext`. Se divergessero l'unico
+  effetto sarebbe un'email a un'ora strana, mai una scadenza contata nel giorno
+  sbagliato.
+- **Lo sweep gira prima dei promemoria, e l'ordine è vincolato**: `fx` → sweep →
+  promemoria → digest → potatura. È lo sweep a materializzare le occorrenze su cui
+  gli avvisi scattano; invertendoli, il giorno in cui l'orizzonte si estende la
+  scadenza appena nata non riceverebbe il suo avviso a 30 giorni.
+  `syncOccurrences` ha un `try/catch` **per singola spesa**, perché un
+  `MISSING_FX_RATE` su una spesa in corone non deve fermare le altre ventisei.
+- **Le auto-pagate mettono `paidAt = dueDate`, non «adesso».** Il pagamento è
+  avvenuto il giorno della scadenza, non quello in cui il cron se n'è accorto: per
+  questo è un ciclo di `update` e non un `updateMany`, che non sa copiare una
+  colonna in un'altra. **`confirmedAt` non si tocca mai**: è il meccanismo con cui
+  ci si accorge degli aumenti di prezzo, e riempirlo da codice lo spegnerebbe.
+- **Il digest vuoto non si manda, ma la riga di deduplica si scrive lo stesso.**
+  Senza, ogni riavvio dello stesso giorno ci riproverebbe. Le quattro sezioni sono
+  scadenze dei prossimi 7 giorni, finestre di disdetta entro 30, **da confermare**
+  e in ritardo: la terza è quella che dà al riepilogo una ragione d'esistere oltre
+  ai promemoria, perché nessun altro avviso la nomina.
+- **Nessun avviso di disdetta se `cancelledAt` è valorizzato**, e solo sulla
+  **prima** occorrenza `PLANNED` della spesa. Insistere su una disdetta già
+  inviata è peggio del silenzio; e senza il vincolo sulla prima, un mensile con 60
+  giorni di preavviso farebbe scattare due o tre occorrenze insieme. Passato il
+  termine non si avvisa più: sarebbe un rimprovero, non un'azione.
+- **Nessun avviso per una carta in scadenza che non paga più niente.** Serve
+  almeno una spesa `ACTIVE` agganciata: avvisare per una carta inutilizzata
+  insegna a ignorare gli avvisi, ed è il danno più caro di tutti.
+- **Resend senza SDK**, una `POST` con `fetch` e la risposta validata da Zod,
+  esattamente come `services/frankfurter.ts` fa con la BCE. Una dipendenza in meno
+  e coerenza con l'unico altro servizio esterno del progetto. Su un non-2xx
+  l'errore porta lo stato e i primi 200 caratteri del corpo, perché «422» da solo
+  non dice se il problema è il mittente non verificato o il destinatario.
+- **`MAIL_TRANSPORT` ha tre valori e il default lo decide `createMailer`, non lo
+  schema Zod**: `production → resend`, `test → memory`, altrimenti `log`.
+  Scriverlo anche nello schema significherebbe avere la stessa regola in due
+  posti, e il secondo prima o poi diverge. Nello schema resta solo il
+  `superRefine` che rifiuta `resend` senza chiave.
+- **I testi delle email stanno in `packages/shared`**, come funzioni pure
+  `PlannedReminder[] → { subject, title, text }`, così si provano con gli stessi
+  test del motore. Niente MJML né React Email: template literal per il testo e
+  venti righe per l'HTML. La parte `text` non è un ripiego — è quella che si legge
+  nell'anteprima del telefono, ed è la stessa che finisce in `Notification.body`.
+- **Il conteggio delle non lette ha una rotta sua**, `/notifications/unread-count`.
+  È quella che il frontend interroga ogni minuto: dev'essere un `count`
+  sull'indice già esistente, e infilarlo nella lista romperebbe la forma di
+  `Paginated<T>`, che è uguale per tutte le risorse.
+- **`POST /notifications/:id/read` e non `PATCH`.** È un'azione idempotente senza
+  corpo, e il parser del corpo vuoto esiste già, scritto per `/auth/refresh`. Un
+  `PATCH { read: true }` aprirebbe subito la domanda «e `read: false`?», che non
+  serve a nessuno.
+- **Gli anticipi si salvano deduplicati e ordinati**, dal `transform` dello schema.
+  `[7, 30, 7]` e `[30, 7]` sono la stessa configurazione: salvarle diverse
+  renderebbe diverse due chiavi di deduplica che devono coincidere. È anche il
+  motivo per cui la pagina riscrive il modulo con la risposta del server — chi
+  scrive `7, 30, 7` deve rileggere `30, 7`, altrimenti la normalizzazione resta
+  invisibile.
+- **La lista delle notifiche si carica solo all'apertura del popover**
+  (`enabled: open`): a campanella chiusa viaggia solo il conteggio. I sessanta
+  secondi di `refetchInterval` non sono di meno perché i dati sotto cambiano una
+  volta al giorno, e non di più perché dopo un «Esegui adesso» il badge deve
+  reagire entro un tempo che sembri una conseguenza del clic.
+  `refetchIntervalInBackground` resta `false`, così una scheda dimenticata non
+  interroga l'API tutta la notte.
+- **Il badge dice il numero anche a parole**, nell'`aria-label`: un pallino rosso
+  non si legge con lo screen reader, e l'unica informazione che porta dev'essere
+  anche nell'etichetta.
+- **`PATCH /settings` non accetta `baseCurrency`.** I cambi sono congelati sulle
+  occorrenze nel momento in cui nascono: cambiare la valuta base a metà strada
+  renderebbe incomparabili tutti i `baseGrossCents` già scritti, senza che niente
+  lo segnali. `GET` invece restituisce tutta la riga, perché alla Fase 6 serve il
+  regime fiscale.
+- **`upsert` e non `update` sulle impostazioni**, così un utente senza riga si
+  autoripara invece di ricevere 500 a ogni chiamata.
+- **La tendina dei fusi ha nove voci più quella salvata se è fuori elenco.**
+  Seicento fusi, per un utente che ne ha uno solo corretto, sono più difficili da
+  usare di nove; ma chi ha un fuso arrivato dal seed o dall'API non deve vederselo
+  sostituire dal primo della tendina semplicemente aprendo la pagina. La
+  validazione usa `isValidTimeZone`, che prova a costruire un
+  `Intl.DateTimeFormat` e guarda se esplode: `Intl.supportedValuesOf` sarebbe più
+  severo ma alloca seicento stringhe a ogni chiamata e rifiuterebbe `UTC`, mentre
+  il `try/catch` accetta esattamente ciò che poi funzionerà a valle.
+- **`POST /jobs/:name/run` è protetto dalla sessione, non da un token condiviso.**
+  Un secondo sistema di credenziali da custodire, per un endpoint che non fa nulla
+  che l'utente non possa già fare sui propri dati, sarebbe costo senza guadagno.
+  Ha un limite di 5 al minuto, e questo vincola il test: `app.inject` arriva
+  sempre dallo stesso IP, quindi quel file ne usa esattamente tre.
+- **Risponde con i contatori del giro, non con un «fatto».** `{ fxRates,
+occurrencesSynced, markedPaid, remindersPlanned, emailsSent,
+notificationsCreated, failures }` è esattamente ciò che si vuole leggere per
+  capire se in produzione funziona: un `emailsSent` a zero dove ce se ne aspettava
+  uno è un'informazione, «fatto» no. Per questo `JobResult` e `JobCounters` stanno
+  in `packages/shared` e non in `apps/api`: sono la forma di una risposta HTTP che
+  il frontend legge, come `Settings` e `Notification`.
 
 ### Autenticazione
 
@@ -725,9 +893,17 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   convenzione della loro immagine e non indica la versione.
 - **MinIO al posto di R2 in sviluppo**: è S3-compatible, quindi il codice
   applicativo è identico e si sviluppa senza account esterni e senza rete.
-- **Il cron sarà un secondo servizio Railway sulla stessa immagine dell'API**,
-  con start command diverso: nessuna duplicazione del client Prisma, una sola
-  build, e log separati da quelli delle richieste HTTP.
+- **Il cron era previsto come secondo servizio Railway; è finito dentro l'API.**
+  L'idea era la stessa immagine con uno start command diverso, per avere log
+  separati da quelli delle richieste HTTP. Non regge il confronto con il costo:
+  un container acceso ventiquattr'ore per lavorare due minuti al giorno
+  raddoppia la spesa e la superficie da tenere aggiornata, per
+  un'applicazione con un utente. E l'argomento a favore — i log distinti — si
+  ottiene con `app.log.child({ job })`, che li marca tutti senza un secondo
+  processo. La scelta ha una condizione, ed è l'unica che la invaliderebbe:
+  «App Sleeping» dev'essere spento sul servizio `api`, perché un processo
+  addormentato alle 07:00 non gira. Con più di una replica servirebbe invece il
+  `pg_try_advisory_lock` dichiarato in `runner.ts`.
 
 ### Deploy
 
@@ -953,11 +1129,12 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   voce mancante nella mappa delle icone, per esempio, che non si vedrebbe fino
   al primo rendering di una categoria che la usa — ma non sostituisce dei test
   d'interazione, che arriveranno se e quando la logica del client crescerà.
-- **Le occorrenze si materializzano solo quando la spesa viene toccata.** Non
-  c'è ancora nulla che estenda l'orizzonte da sé: fra tredici mesi le scadenze
-  finiscono, e senza una modifica alla spesa nessuno le rigenera. È lavoro del
-  cron della Fase 4, che rilancerà `syncOccurrences` su tutte le spese attive —
-  la funzione è già idempotente, quindi si tratta solo di chiamarla.
+- ~~**Le occorrenze si materializzano solo quando la spesa viene toccata.**~~
+  Chiuso dalla Fase 4: lo sweep del giro giornaliero rilancia `syncOccurrences`
+  su tutte le spese attive, con un `try/catch` per singola spesa. Resta vero che
+  senza il cron acceso l'orizzonte non si estende da sé, ed è il motivo per cui
+  `CRON_ENABLED` in produzione è dichiarata in `railway.ts` invece di essere
+  lasciata al default.
 - **Lo storico anteriore all'inserimento va importato a mano.** Il motore non lo
   genera di proposito; oggi lo scrive solo `seed:demo`, per i dati finti.
   Registrare una spesa che esiste da anni e volerne il passato richiede un
@@ -996,6 +1173,61 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   un'occorrenza lo accetta, ma non c'è nulla da collegare finché la Fase 7 non
   porta l'archivio documenti. Il campo resta scoperto dai test del client.
 - **Il bundle va rimisurato a ogni fase.** Le tre pagine delle spese l'hanno
-  portato da 587 a 633 kB (186 kB gzip): la crescita resta proporzionata, ma
-  oltre i 700 kB conviene anticipare il primo `React.lazy` invece di aspettare
-  Recharts.
+  portato da 587 a 633 kB (186 kB gzip); la campanella, il popover e la pagina
+  degli avvisi da 633 a **655 kB (191 kB gzip)**, misurati, contro i ~660
+  stimati. La crescita resta proporzionata, ma oltre i 700 kB conviene
+  anticipare il primo `React.lazy` invece di aspettare Recharts.
+- **Un'email fallita non viene mai ritentata.** La riga `ReminderLog` resta con
+  `succeeded = false` e il giro successivo la salta, perché la chiave esiste già.
+  È voluto — è la scelta che garantisce «al massimo una volta» — ma significa che
+  per riprovare bisogna cancellare quella riga a mano in `psql`. Un secondo
+  tentativo automatico richiederebbe di distinguere gli errori temporanei da
+  quelli permanenti, e sbagliando quella distinzione si rimanda tutto.
+- **Le scadute senza rinnovo automatico non ricevono nessun avviso.** Lo sweep
+  non le tocca — giustamente, perché non sono state pagate — ma nemmeno i
+  promemoria le nominano, dato che quelli guardano avanti e non indietro.
+  Compaiono solo nella sezione «in ritardo» del riepilogo settimanale, cioè fino
+  a sei giorni dopo. Un avviso «scaduta e non pagata» il giorno stesso sarebbe la
+  cosa giusta, e va disegnato con la sua regola di ripetizione, perché una spesa
+  arretrata per due mesi non deve produrre sessanta email.
+- **`DOCUMENT_DUE` è un genere senza produttore.** L'enum lo prevede, il motore
+  non lo emette: servirà alla Fase 7, quando esisteranno documenti con una
+  scadenza. Finché non c'è, resta un valore che comparirebbe solo se qualcuno
+  scrivesse a mano una riga in tabella.
+- **Le notifiche non si cancellano dall'interfaccia.** Si possono solo segnare
+  lette, singolarmente o tutte. Le lette spariscono da sole dopo
+  `NOTIFICATION_RETENTION_DAYS` (180); le non lette non si potano mai, perché
+  sono cose che l'utente non ha ancora visto e cancellarle sarebbe decidere al
+  posto suo.
+- **`GET /notifications` filtra solo per «non lette».** Non c'è modo di chiedere
+  «solo le carte in scadenza» o «solo le disdette»: il genere è in tabella e
+  l'indice c'è, manca il parametro. Con una decina di notifiche al mese il
+  problema non si pone.
+- **Il badge può restare vecchio fino a un minuto.** È un `refetchInterval`, non
+  un push: niente SSE né WebSocket per un numero che cambia una volta al giorno.
+  `refetchOnWindowFocus` copre il caso vero — si torna sulla scheda la mattina e
+  il numero è già giusto.
+- **Il single-flight dei lavori sta in memoria.** `runner.ts` tiene una
+  `Map<JobName, Promise>` e chi arriva secondo riceve il risultato del primo
+  invece di un errore; insieme a `protect: true` di croner basta per un processo
+  solo. Con più repliche servirebbe il `pg_try_advisory_lock`, che è dichiarato
+  nel commento ma non implementato: due processi che partono insieme alle 07:00
+  manderebbero le email una volta sola comunque, grazie ai vincoli di unicità,
+  ma sprecherebbero un giro intero di query e potrebbero prendersi un deadlock
+  sullo sweep.
+- **Resend scrive solo al titolare dell'account.** Il mittente è il dominio
+  condiviso `onboarding@resend.dev`, che funziona senza toccare i DNS ma ha due
+  conseguenze: un secondo destinatario non riceverebbe niente, e le prime email
+  finiscono facilmente nella posta indesiderata, perché il dominio è condiviso e
+  senza DKIM proprio. Si risolve verificando un dominio, che richiede di
+  possederne uno.
+- **Lo scheduler non è coperto da test.** Si prova la pipeline che chiama, non la
+  pianificazione: quella è responsabilità di croner, e provarla significherebbe
+  o aspettare le 07:00 o simulare l'orologio, che è esattamente ciò che tutto il
+  resto della fase è stato scritto per non dover fare.
+- **Un test di integrazione è fallito una volta su cinque esecuzioni** e non è
+  stato possibile identificarlo: l'output era già stato troncato. Le tre
+  esecuzioni successive sono state verdi. Se ricapita va catturato l'output
+  intero (`npm test > file 2>&1`) prima di guardarlo: il sospetto è la contesa
+  fra worker sullo stesso database, che è la stessa causa per cui `testTimeout`
+  è stato alzato a 20 s.
