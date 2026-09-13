@@ -1225,9 +1225,21 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   pianificazione: quella è responsabilità di croner, e provarla significherebbe
   o aspettare le 07:00 o simulare l'orologio, che è esattamente ciò che tutto il
   resto della fase è stato scritto per non dover fare.
-- **Un test di integrazione è fallito una volta su cinque esecuzioni** e non è
-  stato possibile identificarlo: l'output era già stato troncato. Le tre
-  esecuzioni successive sono state verdi. Se ricapita va catturato l'output
-  intero (`npm test > file 2>&1`) prima di guardarlo: il sospetto è la contesa
-  fra worker sullo stesso database, che è la stessa causa per cui `testTimeout`
-  è stato alzato a 20 s.
+- **C'è un test intermittente non identificato: due fallimenti in dodici
+  esecuzioni della suite**, sempre uno solo e sempre diverso dal contesto in cui
+  si stava lavorando. Entrambe le volte l'output è andato perso prima di poterlo
+  leggere — la prima perché troncato da `tail`, la seconda perché il file era già
+  stato cancellato — e otto esecuzioni mirate a farlo ricomparire sono state
+  tutte verdi. Il sospetto resta la contesa fra worker sullo stesso database, la
+  stessa causa per cui `testTimeout` è stato alzato a 20 s, ma è un sospetto e
+  non una diagnosi. Regola per la prossima volta: `npm test > ci-test.txt 2>&1` e
+  **non cancellare il file** finché non lo si è letto. Se diventasse frequente,
+  la strada è dare a ogni file di test il proprio schema Postgres invece di
+  condividerne uno.
+- **La verifica locale non coincideva con quella della CI.** Il ciclo usato
+  durante la Fase 4 era `lint && typecheck && test`, ma il workflow esegue prima
+  di tutto `npm run format:check`: due file del motore dei promemoria sono
+  arrivati su `main` non formattati e hanno fatto fallire la pipeline, cioè hanno
+  impedito a Railway di costruire. Il comando giusto prima di ogni push è
+  `npm run format:check && npm run lint && npm run typecheck && npm test`, nello
+  stesso ordine del workflow.

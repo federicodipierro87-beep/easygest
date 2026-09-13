@@ -391,7 +391,9 @@ describe('testi degli avvisi', () => {
     // aprire niente, e due frasi diverse sembrerebbero due avvisi.
     expect(message.subject).toBe('Scadenza in arrivo: Hosting (fra 7 giorni)');
     expect(message.title).toBe(message.subject);
-    expect(message.text).toContain('- Hosting (12,00\u00a0\u20ac): scade il 2027-03-15, fra 7 giorni');
+    expect(message.text).toContain(
+      '- Hosting (12,00\u00a0\u20ac): scade il 2027-03-15, fra 7 giorni',
+    );
   });
 
   it('conta invece di nominare quando gli avvisi sono pi\u00f9 d\u2019uno', () => {
@@ -512,4 +514,3 @@ describe('ordine dell\u2019uscita', () => {
     expect(reminders.map((r) => r.label)).toEqual(['Hosting', 'Dominio', 'Carta aziendale']);
   });
 });
-

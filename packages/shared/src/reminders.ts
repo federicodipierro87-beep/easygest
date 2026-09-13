@@ -348,10 +348,9 @@ export function lastValidDay(expiryMonth: number, expiryYear: number): Date {
  * chiavi coincidessero, la seconda scrittura fallirebbe per doppione e uno dei
  * due canali resterebbe muto senza che nessuno se ne accorga.
  */
-function bothChannels(build: (channel: NotificationChannel) => string): Record<
-  NotificationChannel,
-  string
-> {
+function bothChannels(
+  build: (channel: NotificationChannel) => string,
+): Record<NotificationChannel, string> {
   return { EMAIL: build('EMAIL'), IN_APP: build('IN_APP') };
 }
 
@@ -413,10 +412,7 @@ export function planReminders(input: PlanRemindersInput): PlannedReminder[] {
     if (deadline === null) continue;
 
     const daysRemaining = differenceInDays(today, deadline);
-    const daysBefore = pickDaysBefore(
-      daysRemaining,
-      input.settings.cancellationReminderDaysBefore,
-    );
+    const daysBefore = pickDaysBefore(daysRemaining, input.settings.cancellationReminderDaysBefore);
     if (daysBefore === null) continue;
 
     planned.push({
