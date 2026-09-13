@@ -1,6 +1,8 @@
 import { isValidTimeZone } from '@easygest/shared';
 import { z } from 'zod';
 
+import type { MailTransport } from '../mail/types';
+
 /**
  * Configurazione dell'API.
  *
@@ -123,15 +125,15 @@ const envSchema = z.object({
   /**
    * Come partono le email.
    *
-   * Facoltativa: il default vero lo risolve `createMailer` da `NODE_ENV`
-   * (`production` → `resend`, `test` → `memory`, altrimenti `log`). Metterlo
-   * qui significherebbe scrivere due volte la stessa regola, e la seconda
-   * finirebbe per divergere.
+   * Facoltativa: se manca, il trasporto lo deduce `resolveMailTransport` qui
+   * sotto a partire da `NODE_ENV`. Darle un default nello schema sarebbe la
+   * stessa regola scritta due volte, e la seconda finirebbe per divergere.
    */
   MAIL_TRANSPORT: z.enum(['resend', 'log', 'memory']).optional(),
 
   /**
-   * Chiave di Resend. Obbligatoria solo con il trasporto `resend`: vedi il
+   * Chiave di Resend. Obbligatoria quando il trasporto **risolto** è `resend`,
+   * che non è la stessa cosa che averlo scritto in `MAIL_TRANSPORT`: vedi il
    * `superRefine` in fondo allo schema.
    */
   RESEND_API_KEY: z.string().min(1).optional(),
@@ -159,16 +161,39 @@ const envSchema = z.object({
   NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
 });
 
+/**
+ * Quale trasporto, se nessuno lo impone.
+ *
+ * Sta qui, nella configurazione, e non accanto al mailer, per una ragione
+ * imparata sul campo: la regola serve a **due** lettori, `createMailer` e la
+ * validazione qui sotto, e finché ne conosceva uno solo la validazione
+ * guardava la variabile grezza. In produzione, dove `MAIL_TRANSPORT` non era
+ * impostata e il trasporto veniva dedotto da `NODE_ENV`, il controllo non
+ * scattava: il processo partiva con un mailer Resend senza chiave e lo
+ * scopriva al primo invio — cioè troppo tardi, perché un promemoria fallito
+ * non viene mai ritentato.
+ */
+export function resolveMailTransport(env: Env): MailTransport {
+  if (env.MAIL_TRANSPORT !== undefined) return env.MAIL_TRANSPORT;
+  if (env.NODE_ENV === 'production') return 'resend';
+  if (env.NODE_ENV === 'test') return 'memory';
+  return 'log';
+}
+
 const envSchemaWithRules = envSchema.superRefine((value, ctx) => {
-  // Il controllo sta qui e non in `RESEND_API_KEY` perché dipende da un altro
-  // campo. Fallire all'avvio è il punto: senza, l'applicazione parte, lavora
+  // Il controllo sta qui e non in `RESEND_API_KEY` perché dipende da altri due
+  // campi. Fallire all'avvio è il punto: senza, l'applicazione parte, lavora
   // tutto il giorno e scopre di non poter mandare niente alle sette del
   // mattino, quando nessuno legge i log.
-  if (value.MAIL_TRANSPORT === 'resend' && value.RESEND_API_KEY === undefined) {
+  //
+  // Si guarda il trasporto **risolto** e non `value.MAIL_TRANSPORT`: sono la
+  // stessa cosa solo quando la variabile è impostata, ed è proprio il caso in
+  // cui non lo è — la produzione — quello in cui sbagliare costa.
+  if (resolveMailTransport(value) === 'resend' && value.RESEND_API_KEY === undefined) {
     ctx.addIssue({
       code: 'custom',
       path: ['RESEND_API_KEY'],
-      message: 'obbligatoria quando MAIL_TRANSPORT è resend',
+      message: 'obbligatoria quando le email partono da Resend',
     });
   }
 });

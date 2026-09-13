@@ -1,12 +1,15 @@
 import type { FastifyBaseLogger, FastifyInstance } from 'fastify';
 import fp from 'fastify-plugin';
 
-import type { Env } from '../config/env';
+import { type Env, resolveMailTransport } from '../config/env';
 import { createLogMailer } from './log';
 import { createMemoryMailer } from './memory';
 import { createResendMailer } from './resend';
-import type { MailTransport, Mailer } from './types';
+import type { Mailer } from './types';
 
+// Riesportata da dove è sempre stata importata: la funzione si è spostata nella
+// configurazione, ma è del mailer che si parla, e chi la cerca la cerca qui.
+export { resolveMailTransport } from '../config/env';
 export { MailDeliveryError, createResendMailer } from './resend';
 export { createMemoryMailer, type MemoryMailer } from './memory';
 export { escapeHtml, renderHtml } from './render';
@@ -18,22 +21,6 @@ declare module 'fastify' {
   }
 }
 
-/**
- * Quale trasporto, se nessuno lo impone.
- *
- * La regola vive qui e non nello schema di Zod perché è una scelta di
- * comportamento, non di validità: `MAIL_TRANSPORT` assente è una
- * configurazione perfettamente valida, e lo schema non deve fingere il
- * contrario. Nello schema resta solo ciò che rende una configurazione
- * impossibile — `resend` senza chiave.
- */
-export function resolveMailTransport(env: Env): MailTransport {
-  if (env.MAIL_TRANSPORT !== undefined) return env.MAIL_TRANSPORT;
-  if (env.NODE_ENV === 'production') return 'resend';
-  if (env.NODE_ENV === 'test') return 'memory';
-  return 'log';
-}
-
 export function createMailer(env: Env, log: FastifyBaseLogger): Mailer {
   const transport = resolveMailTransport(env);
 
@@ -42,6 +29,12 @@ export function createMailer(env: Env, log: FastifyBaseLogger): Mailer {
       // Non ricontrolla la chiave: il `superRefine` di `env.ts` ha già
       // impedito al processo di arrivare fin qui senza. Un secondo controllo
       // qui sarebbe un secondo posto in cui sbagliare il messaggio d'errore.
+      //
+      // L'invariante regge perché la validazione usa `resolveMailTransport`, la
+      // stessa funzione chiamata qui sopra. Quando invece guardava la variabile
+      // grezza, questa riga produceva un mailer con `apiKey: ''` ogni volta che
+      // il trasporto era dedotto da `NODE_ENV` — ed è la ragione per cui la
+      // funzione è stata spostata in `config/env.ts`.
       return createResendMailer({ apiKey: env.RESEND_API_KEY ?? '', from: env.MAIL_FROM });
     case 'memory':
       return createMemoryMailer();

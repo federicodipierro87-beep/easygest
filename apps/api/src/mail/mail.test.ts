@@ -40,6 +40,26 @@ describe('scelta del trasporto', () => {
     expect(resolveMailTransport(env)).toBe('log');
   });
 
+  it('pretende la chiave anche quando «resend» è dedotto, non scritto', () => {
+    // È la configurazione che è stata davvero in produzione: `MAIL_TRANSPORT`
+    // non impostata, `NODE_ENV=production`, nessuna chiave. Finché la
+    // validazione guardava la variabile grezza invece del trasporto risolto,
+    // questo `parseEnv` passava, il processo partiva e l'errore si presentava
+    // al primo invio — quando è già tardi, perché un promemoria fallito non
+    // viene ritentato e la sua chiave di deduplica resta bruciata.
+    expect(() => parseEnv({ ...required, NODE_ENV: 'production' })).toThrow(/RESEND_API_KEY/);
+  });
+
+  it('non pretende la chiave se il trasporto dedotto non è «resend»', () => {
+    // Il contrappeso del test qui sopra: senza, il modo più semplice di farlo
+    // passare sarebbe rendere la chiave obbligatoria sempre, e in sviluppo
+    // l'applicazione non partirebbe più.
+    expect(() => parseEnv(required)).not.toThrow();
+    expect(() =>
+      parseEnv({ ...required, NODE_ENV: 'production', MAIL_TRANSPORT: 'log' }),
+    ).not.toThrow();
+  });
+
   it('costruisce un mailer per ogni trasporto', () => {
     for (const transport of ['log', 'memory'] as const) {
       const env = parseEnv({ ...required, MAIL_TRANSPORT: transport });
