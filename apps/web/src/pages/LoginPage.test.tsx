@@ -29,6 +29,23 @@ async function load() {
   return { ...page, ...session };
 }
 
+/**
+ * Scalda il grafo prima che sia il primo test a pagarlo.
+ *
+ * `vi.resetModules()` svuota il registro dei moduli, non la cache di
+ * trasformazione di Vite: il primo `import` del file trasforma React, React
+ * Router e TanStack Query da zero e costa due secondi e mezzo, i quattro
+ * `load()` successivi cinquanta millisecondi l'uno. È un costo del file, non
+ * del test che capita per primo, e addossarglielo rendeva quel test l'unico
+ * fragile della suite — con dieci worker in concorrenza i due secondi e mezzo
+ * arrivavano oltre i venti di `testTimeout` e falliva a caso, circa una volta
+ * su sei. Qui lo paga la raccolta del file, che un limite per test non ce l'ha.
+ *
+ * Non sporca nulla: `load()` rifà comunque `vi.resetModules()`, quindi questa
+ * istanza del grafo viene buttata e nessun test la vede.
+ */
+await import('./LoginPage');
+
 beforeEach(() => {
   vi.stubGlobal('fetch', () =>
     Promise.resolve(

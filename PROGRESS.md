@@ -445,11 +445,23 @@ occurrences, paymentMethods }` e restituisce `PlannedReminder[]`. Le query e la
   e coerenza con l'unico altro servizio esterno del progetto. Su un non-2xx
   l'errore porta lo stato e i primi 200 caratteri del corpo, perché «422» da solo
   non dice se il problema è il mittente non verificato o il destinatario.
-- **`MAIL_TRANSPORT` ha tre valori e il default lo decide `createMailer`, non lo
-  schema Zod**: `production → resend`, `test → memory`, altrimenti `log`.
-  Scriverlo anche nello schema significherebbe avere la stessa regola in due
-  posti, e il secondo prima o poi diverge. Nello schema resta solo il
-  `superRefine` che rifiuta `resend` senza chiave.
+- **`MAIL_TRANSPORT` ha tre valori e il default lo deduce `resolveMailTransport`,
+  non lo schema Zod**: `production → resend`, `test → memory`, altrimenti `log`.
+  La funzione però vive in `config/env.ts`, non accanto al mailer, e la ragione
+  è un difetto vero trovato a fase chiusa. L'intenzione era giusta — una regola
+  sola, in un posto solo — ma l'attuazione ne aveva **due**: la funzione stava in
+  `mail/index.ts` e il `superRefine` leggeva la variabile grezza
+  `MAIL_TRANSPORT`. Nel caso in cui i due modi coincidono, cioè quando la
+  variabile è impostata, non si vedeva niente; nel caso in cui divergono — la
+  produzione, dove la variabile non c'era e il trasporto veniva dedotto da
+  `NODE_ENV` — la validazione non scattava, il processo partiva e `createMailer`
+  costruiva un mailer Resend con `apiKey: ''`. Si sarebbe scoperto al primo
+  invio, cioè troppo tardi: un promemoria fallito non viene ritentato e la sua
+  chiave di deduplica resta bruciata. Ora la validazione chiama la stessa
+  funzione di `createMailer`, e due test fissano il caso e il suo contrappeso.
+  La lezione: «una regola sola» va verificata sui **lettori**, non sulle righe di
+  codice — due lettori della stessa regola sono una duplicazione anche quando la
+  regola è scritta una volta, se uno dei due se la riscrive per conto suo.
 - **I testi delle email stanno in `packages/shared`**, come funzioni pure
   `PlannedReminder[] → { subject, title, text }`, così si provano con gli stessi
   test del motore. Niente MJML né React Email: template literal per il testo e
@@ -1225,17 +1237,24 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   pianificazione: quella è responsabilità di croner, e provarla significherebbe
   o aspettare le 07:00 o simulare l'orologio, che è esattamente ciò che tutto il
   resto della fase è stato scritto per non dover fare.
-- **C'è un test intermittente non identificato: due fallimenti in dodici
-  esecuzioni della suite**, sempre uno solo e sempre diverso dal contesto in cui
-  si stava lavorando. Entrambe le volte l'output è andato perso prima di poterlo
-  leggere — la prima perché troncato da `tail`, la seconda perché il file era già
-  stato cancellato — e otto esecuzioni mirate a farlo ricomparire sono state
-  tutte verdi. Il sospetto resta la contesa fra worker sullo stesso database, la
-  stessa causa per cui `testTimeout` è stato alzato a 20 s, ma è un sospetto e
-  non una diagnosi. Regola per la prossima volta: `npm test > ci-test.txt 2>&1` e
-  **non cancellare il file** finché non lo si è letto. Se diventasse frequente,
-  la strada è dare a ogni file di test il proprio schema Postgres invece di
-  condividerne uno.
+- ~~**C'è un test intermittente non identificato: due fallimenti in dodici
+  esecuzioni della suite.**~~ **Trovato e risolto.** Era il primo test di
+  `LoginPage.test.tsx`, che andava in `testTimeout`. La diagnosi che si era
+  ipotizzata — contesa sul database — era sbagliata: quel file il database non
+  lo tocca. Il costo stava tutto nel primo `import` del grafo di React, React
+  Router e TanStack Query, che da solo vale 2,3 s mentre i quattro test
+  successivi ne valgono 20–80 ms l'uno. La differenza è che `vi.resetModules()`
+  svuota il registro dei moduli ma **non** la cache di trasformazione di Vite:
+  chi arriva per primo paga la trasformazione per tutti. Con dieci worker in
+  concorrenza quei 2,3 s superavano i 20 s del limite, e falliva solo quel test
+  perché era l'unico a pagare un costo che è del file. La correzione è un
+  `await import('./LoginPage')` in cima al file: il conto lo salda la raccolta,
+  che un limite per test non ce l'ha, e il primo test scende da 2299 ms a 57 ms.
+  Tre esecuzioni complete di verifica, tutte verdi. Due lezioni che restano: il
+  sospetto comodo («sarà il database») ha fatto cercare nel posto sbagliato per
+  otto esecuzioni, e l'output va salvato su file — `npm test > ci-test.txt 2>&1`
+  — senza `tail` e senza cancellarlo prima di averlo letto, perché è stato perso
+  due volte così.
 - **La verifica locale non coincideva con quella della CI.** Il ciclo usato
   durante la Fase 4 era `lint && typecheck && test`, ma il workflow esegue prima
   di tutto `npm run format:check`: due file del motore dei promemoria sono
