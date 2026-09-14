@@ -141,11 +141,20 @@ const envSchema = z.object({
   /**
    * Mittente delle email.
    *
-   * Il default è il dominio condiviso di Resend, che funziona senza configurare
-   * DNS ma scrive **solo** al titolare dell'account: va benissimo per provare,
-   * non per un secondo destinatario.
+   * Il default è `easysolution-dp.com`, dominio verificato su Resend e quindi
+   * firmato DKIM. Prima era il dominio condiviso `onboarding@resend.dev`, che
+   * non richiede DNS ma ha due difetti scoperti provandolo: scrive **solo** al
+   * titolare dell'account — un secondo destinatario non riceve niente, e la
+   * cosa non si vede finché l'unico utente è il titolare — e senza firma
+   * propria finisce facilmente in posta indesiderata. Per un promemoria è un
+   * guaio silenzioso: non viene ritentato, e la sua chiave di deduplica resta
+   * bruciata comunque.
+   *
+   * Entrambi i mittenti sono stati provati e consegnati; si tiene quello che
+   * non ha il limite. Resta comunque dichiarato in `railway.ts`, perché il
+   * default serve allo sviluppo e la produzione non deve dipendere da lui.
    */
-  MAIL_FROM: z.string().min(1).default('EasyGest <onboarding@resend.dev>'),
+  MAIL_FROM: z.string().min(1).default('EasyGest <no-reply@easysolution-dp.com>'),
 
   /** Radice dei link dentro le email. Punta al frontend, non a questa API. */
   APP_BASE_URL: z.url().default('http://localhost:5173'),

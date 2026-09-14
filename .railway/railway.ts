@@ -161,11 +161,12 @@ export default defineRailway(() => {
        */
       RESEND_API_KEY: preserve(),
 
-      // Il dominio è quello condiviso di Resend: scrive solo al titolare
-      // dell'account, il che qui basta perché il destinatario è uno solo ed è
-      // lui. Il prezzo è la posta indesiderata, finché non si verifica un
-      // dominio proprio.
-      MAIL_FROM: 'EasyGest <onboarding@resend.dev>',
+      // Dominio verificato su Resend, quindi firmato DKIM. Si è passati qui dal
+      // condiviso `onboarding@resend.dev` dopo aver provato entrambi: quello
+      // condiviso consegnava, ma solo perché l'unico utente è il titolare
+      // dell'account Resend: a un secondo destinatario non avrebbe scritto, e
+      // il difetto sarebbe rimasto invisibile fino al giorno in cui serve.
+      MAIL_FROM: 'EasyGest <no-reply@easysolution-dp.com>',
 
       // I link dentro le email portano al frontend, non a questa API: è lo
       // stesso indirizzo di `CORS_ORIGINS`, e se uno dei due cambia da solo si

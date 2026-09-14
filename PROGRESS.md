@@ -57,14 +57,20 @@ configurato.
 
 È in produzione e accesa: i log dell'avvio mostrano `transport="resend"` e
 `Lavori pianificati` con `nextRun` alle 05:00 UTC, cioè le 07:00 di Roma con
-l'ora legale — la prova che il fuso è gestito da croner e non a mano. **Una cosa
-però non è ancora stata verificata davvero: che un'email arrivi.** Finora
-`emailsSent` è sempre zero perché il database di produzione non ha spese, quindi
-il percorso Resend è configurato ma mai esercitato. Il primo invio vero è anche
-il primo momento in cui si scoprirà se `MAIL_FROM` va bene: con il dominio
-condiviso `onboarding@resend.dev` si può scrivere **solo** al titolare
-dell'account Resend, e se l'indirizzo di `User.email` non coincide la consegna
-fallisce con un 422 — bruciando la chiave di deduplica, perché non si ritenta.
+l'ora legale — la prova che il fuso è gestito da croner e non a mano. Che la
+posta arrivi davvero è stato verificato a mano, chiamando Resend direttamente
+senza passare dall'applicazione, così da non scrivere `ReminderLog` né bruciare
+chiavi di deduplica: due invii all'unico `User.email` di produzione, entrambi
+`delivered`. Resta però vero che **il cron non ha ancora mandato niente da sé**,
+perché il database di produzione non ha spese e `emailsSent` è sempre stato zero.
+
+Quella verifica ha cambiato una decisione. Il mittente era il dominio condiviso
+`onboarding@resend.dev` e funzionava, ma solo perché l'unico destinatario è il
+titolare dell'account Resend: è l'unico a cui quel dominio possa scrivere. Un
+secondo utente non avrebbe ricevuto niente, e non si sarebbe visto fino al
+giorno in cui fosse servito. Dato che esiste già un dominio verificato,
+`MAIL_FROM` è passato a `no-reply@easysolution-dp.com`, che è firmato DKIM e
+scrive a chiunque.
 
 ---
 
@@ -1238,12 +1244,16 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   manderebbero le email una volta sola comunque, grazie ai vincoli di unicità,
   ma sprecherebbero un giro intero di query e potrebbero prendersi un deadlock
   sullo sweep.
-- **Resend scrive solo al titolare dell'account.** Il mittente è il dominio
-  condiviso `onboarding@resend.dev`, che funziona senza toccare i DNS ma ha due
-  conseguenze: un secondo destinatario non riceverebbe niente, e le prime email
-  finiscono facilmente nella posta indesiderata, perché il dominio è condiviso e
-  senza DKIM proprio. Si risolve verificando un dominio, che richiede di
-  possederne uno.
+- ~~**Resend scrive solo al titolare dell'account.**~~ **Chiuso**, e la chiusura
+  è arrivata dal controllo sbagliato: si voleva verificare che `User.email` di
+  produzione coincidesse con l'indirizzo dell'account Resend, e interrogando
+  l'API è saltato fuori che l'account ha già un dominio verificato,
+  `easysolution-dp.com`, fermo lì da novembre. Il debito diceva «si risolve
+  verificando un dominio, che richiede di possederne uno» dando per scontato che
+  non ce ne fosse: era una supposizione, non un fatto, e nessuno l'aveva
+  controllata. `MAIL_FROM` ora usa `no-reply@easysolution-dp.com`, firmato DKIM
+  e senza il limite del destinatario unico; entrambi i mittenti erano stati
+  provati e consegnati, si è tenuto quello che non ha il vincolo.
 - **Lo scheduler non è coperto da test.** Si prova la pipeline che chiama, non la
   pianificazione: quella è responsabilità di croner, e provarla significherebbe
   o aspettare le 07:00 o simulare l'orologio, che è esattamente ciò che tutto il
