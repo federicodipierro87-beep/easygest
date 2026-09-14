@@ -2,6 +2,7 @@ import {
   AUTH_ERROR_CODES,
   changePasswordSchema,
   loginSchema,
+  profilePatchSchema,
   registerSchema,
 } from '@easygest/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -14,6 +15,7 @@ import {
   logout,
   refresh,
   register,
+  updateProfile,
 } from '../auth/service';
 import { hashRefreshToken } from '../auth/tokens';
 import type { Env } from '../config/env';
@@ -39,6 +41,18 @@ import {
  */
 const LOGIN_RATE_LIMIT = {
   rateLimit: { max: 5, timeWindow: '15 minutes' },
+} as const;
+
+/**
+ * Limite sulla modifica del profilo, perché la rotta **verifica una password**.
+ *
+ * Senza, sarebbe un oracolo per indovinarla che aggira il `LOGIN_RATE_LIMIT`
+ * qui sopra, con in più il vantaggio di non lasciare traccia nei login falliti.
+ * Dieci e non cinque perché da qui si salva anche il solo nome, e sbagliare due
+ * volte un modulo che non chiede nessuna credenziale è normale.
+ */
+const PROFILE_RATE_LIMIT = {
+  rateLimit: { max: 10, timeWindow: '15 minutes' },
 } as const;
 
 function clientInfo(request: FastifyRequest): ClientInfo {
@@ -106,6 +120,28 @@ export function registerAuthRoutes(app: FastifyInstance, env: Env): void {
 
   app.get('/auth/me', { preHandler: app.authenticate }, (request, reply) =>
     reply.send(requireUser(request)),
+  );
+
+  /**
+   * Nome e indirizzo.
+   *
+   * Risponde con l'utente intero e non 204 perché l'email esce
+   * **normalizzata** — `emailSchema` fa `trim` e `toLowerCase` — e chi scrive
+   * `Mario@Gmail.com` deve rileggere `mario@gmail.com`. È la stessa ragione per
+   * cui `PATCH /settings` risponde con la riga intera.
+   *
+   * Il token non viene riemesso: `plugins/auth.ts` rilegge l'utente dal
+   * database a ogni richiesta e il JWT porta solo `userId`, quindi un nome
+   * cambiato è già effettivo sulla richiesta successiva.
+   */
+  app.patch(
+    '/auth/me',
+    { preHandler: app.authenticate, config: PROFILE_RATE_LIMIT },
+    async (request, reply) => {
+      const patch = parseBody(profilePatchSchema, request.body);
+      const user = requireUser(request);
+      return reply.send(await updateProfile(deps, user.id, patch));
+    },
   );
 
   app.post('/auth/change-password', { preHandler: app.authenticate }, async (request, reply) => {
