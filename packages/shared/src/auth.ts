@@ -116,6 +116,14 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
  * il messaggio uscirebbe con il campo vuoto e il frontend lo mostrerebbe come
  * riga rossa generica in fondo al modulo, invece che sotto la casella che
  * manca.
+ *
+ * Le due `refine` non chiudono lo schema: in Zod 4 restituiscono ancora un
+ * `ZodObject`, e `.extend` funziona conservando entrambe le regole. A lanciare
+ * sono `.pick`, `.omit` e `.partial` — una `refine` legge l'oggetto intero, e
+ * togliergli un campo ne cambierebbe il significato senza dirlo. Lanciano però
+ * **a runtime**: per TypeScript sono chiamate legittime e il progetto compila
+ * lo stesso. Una variante ristretta di questo schema non si ricava quindi
+ * ritagliandolo; va costruita dall'oggetto nudo e rifinita a parte.
  */
 export const profilePatchSchema = z
   .strictObject({
