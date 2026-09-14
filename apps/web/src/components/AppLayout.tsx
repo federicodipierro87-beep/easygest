@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { Link, NavLink, Outlet } from 'react-router';
 
 import { NotificationsBell } from '@/components/NotificationsBell';
 import { Button } from '@/components/ui/button';
@@ -69,9 +69,15 @@ export function AppLayout() {
             {/* Prima del nome e non dopo «Esci»: è un comando che si usa, non
                 un'etichetta, e sta accanto agli altri comandi. */}
             <NotificationsBell />
-            <span className="text-muted-foreground hidden text-sm sm:inline">
+            {/* Il nome è la scorciatoia al proprio profilo, non l'unica via:
+                su schermo stretto resta nascosto come prima, e
+                `/impostazioni/profilo` si raggiunge comunque dal menù. */}
+            <Link
+              to="/impostazioni/profilo"
+              className="text-muted-foreground hover:text-foreground hidden text-sm transition-colors sm:inline"
+            >
               {session.user?.displayName ?? ''}
-            </span>
+            </Link>
             <Button
               variant="ghost"
               size="sm"
