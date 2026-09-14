@@ -6,7 +6,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { type Env, parseEnv } from '../config/env';
 import { type AppPrismaClient, createPrismaClient } from '../db/client';
-import { AuthError, changePassword, login, logout, refresh } from './service';
+import { AuthError, changePassword, login, logout, refresh, updateProfile } from './service';
 import { hashRefreshToken } from './tokens';
 
 /**
@@ -301,5 +301,76 @@ describe('changePassword', () => {
       AuthError,
     );
     await expect(refresh(deps, corrente.refreshToken, noClient)).resolves.toBeDefined();
+  });
+});
+
+describe('updateProfile', () => {
+  it('cambia il nome senza chiedere la password', async () => {
+    const user = await createUser();
+
+    const updated = await updateProfile({ prisma, env }, user.id, { displayName: 'Federico' });
+
+    expect(updated.displayName).toBe('Federico');
+    expect(updated.email).toBe(user.email);
+  });
+
+  it('cambia l’indirizzo con la password giusta, e il login segue il nuovo', async () => {
+    const user = await createUser();
+    const deps = { prisma, env };
+    const nuova = `nuova-${randomUUID()}@easygest.test`;
+
+    await updateProfile(deps, user.id, { email: nuova, currentPassword: PASSWORD });
+
+    await expect(
+      login(deps, { email: nuova, password: PASSWORD }, noClient),
+    ).resolves.toBeDefined();
+    // Il vecchio indirizzo non deve restare una seconda porta d'ingresso.
+    await expect(
+      login(deps, { email: user.email, password: PASSWORD }, noClient),
+    ).rejects.toBeInstanceOf(AuthError);
+  });
+
+  it('con la password sbagliata rifiuta e non ha già scritto niente', async () => {
+    // È il test che dimostra l'ordine: la verifica precede la scrittura, quindi
+    // un 401 non lascia dietro di sé un indirizzo cambiato a metà.
+    const user = await createUser();
+
+    await expect(
+      updateProfile({ prisma, env }, user.id, {
+        displayName: 'Federico',
+        email: `mai-${randomUUID()}@easygest.test`,
+        currentPassword: 'non-e-questa',
+      }),
+    ).rejects.toMatchObject({ code: AUTH_ERROR_CODES.invalidCredentials, statusCode: 401 });
+
+    const row = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(row.email).toBe(user.email);
+    expect(row.displayName).toBe('Utente di prova');
+  });
+
+  it('rifiuta l’indirizzo di un altro utente', async () => {
+    const user = await createUser();
+    const altro = await createUser();
+
+    await expect(
+      updateProfile({ prisma, env }, user.id, {
+        email: altro.email,
+        currentPassword: PASSWORD,
+      }),
+    ).rejects.toMatchObject({ code: AUTH_ERROR_CODES.emailAlreadyUsed, statusCode: 409 });
+  });
+
+  it('lascia risalvare lo stesso indirizzo anche con una password sbagliata', async () => {
+    // Risalvare quello che c'è già non è un cambio: chiedere conto di un campo
+    // intatto sarebbe un pedaggio inventato per chi tocca solo il nome.
+    const user = await createUser();
+
+    const updated = await updateProfile({ prisma, env }, user.id, {
+      displayName: 'Federico',
+      email: user.email,
+      currentPassword: 'non-e-questa',
+    });
+
+    expect(updated.displayName).toBe('Federico');
   });
 });

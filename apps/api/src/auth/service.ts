@@ -6,12 +6,14 @@ import {
   type AuthSession,
   type AuthenticatedUser,
   type LoginInput,
+  type ProfilePatch,
   type RegisterInput,
 } from '@easygest/shared';
 import { hash as bcryptHash, verify as bcryptVerify } from '@node-rs/bcrypt';
 
 import type { Env } from '../config/env';
 import type { AppPrismaClient } from '../db/client';
+import { isUniqueViolation } from '../lib/resources';
 import { generateRefreshToken, hashRefreshToken, signAccessToken } from './tokens';
 
 /**
@@ -297,4 +299,63 @@ export async function changePassword(
     },
     data: { revokedAt: new Date() },
   });
+}
+
+/**
+ * Nome e indirizzo.
+ *
+ * Non revoca le altre sessioni, all'opposto di `changePassword` qui sopra: là
+ * la revoca è il punto dell'operazione, perché si cambia password proprio
+ * sospettando che qualcun altro sia entrato. Correggere un refuso nel cognome
+ * non è quel gesto, e sconnettere il telefono per punizione sarebbe una pena
+ * senza reato.
+ *
+ * La password attuale serve solo se l'indirizzo cambia davvero: risalvare
+ * quello che c'è già non è un cambio, e chiedere conto di un campo intatto
+ * sarebbe un pedaggio inventato. La verifica precede qualunque scrittura,
+ * quindi una password sbagliata non lascia dietro di sé un nome aggiornato a
+ * metà.
+ */
+export async function updateProfile(
+  deps: AuthDeps,
+  userId: string,
+  patch: ProfilePatch,
+): Promise<AuthenticatedUser> {
+  const user = await deps.prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    throw new AuthError(401, AUTH_ERROR_CODES.unauthenticated, 'Sessione non valida');
+  }
+
+  const changingEmail = patch.email !== undefined && patch.email !== user.email;
+  if (changingEmail) {
+    const password = patch.currentPassword ?? '';
+    if (!(await bcryptVerify(password, user.passwordHash))) {
+      throw new AuthError(
+        401,
+        AUTH_ERROR_CODES.invalidCredentials,
+        'La password attuale non è corretta',
+      );
+    }
+  }
+
+  try {
+    const updated = await deps.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(patch.displayName === undefined ? {} : { displayName: patch.displayName }),
+        ...(changingEmail ? { email: patch.email } : {}),
+      },
+      select: { id: true, email: true, displayName: true },
+    });
+    return toAuthenticatedUser(updated);
+  } catch (error) {
+    // Il duplicato si riconosce dal vincolo del database e non da una
+    // `findUnique` preventiva come fa `register`: fra la lettura e la scrittura
+    // ci sta un'altra richiesta, e il controllo anticipato lascerebbe comunque
+    // passare la corsa che dice di evitare.
+    if (isUniqueViolation(error)) {
+      throw new AuthError(409, AUTH_ERROR_CODES.emailAlreadyUsed, 'Email già registrata');
+    }
+    throw error;
+  }
 }
