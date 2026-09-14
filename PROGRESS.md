@@ -588,6 +588,41 @@ notificationsCreated, failures }` è esattamente ciò che si vuole leggere per
 - **Il `changePassword` revoca tutte le famiglie tranne quella corrente**: cambiare
   password deve buttare fuori gli altri dispositivi, non anche quello da cui la
   si sta cambiando.
+- **`updateProfile` invece non revoca niente**, ed è la differenza da notare
+  rispetto alla riga qui sopra. La revoca ha senso perché si cambia password
+  proprio sospettando un'intrusione; correggere un refuso nel cognome non è quel
+  gesto, e sconnettere il telefono per punizione sarebbe una pena senza reato.
+- **La password attuale serve per l'email, non per il nome.** Il nome non è una
+  credenziale, e chiederla per cambiarlo insegnerebbe a digitarla senza motivo —
+  che è esattamente l'abitudine su cui conta il phishing. Il confronto è con
+  l'indirizzo **attuale**: risalvare quello che c'è già non è un cambio e non
+  chiede niente.
+- **La verifica della password precede qualunque scrittura**, e c'è un test che
+  lo dimostra: dopo un 401 né il nome né l'indirizzo risultano toccati. Senza
+  quell'ordine un patch che cambia entrambi i campi lascerebbe il nome
+  aggiornato e l'email no, con un errore che dice che non è successo nulla.
+- **Il duplicato di email si riconosce dal vincolo del database, non da una
+  `findUnique` preventiva** come fa `register`. Fra la lettura e la scrittura ci
+  sta un'altra richiesta: il controllo anticipato lascerebbe passare proprio la
+  corsa che dice di evitare, e `isUniqueViolation` è già lì per tradurre il
+  P2002 in un 409 invece che in un 500.
+- **`PATCH /auth/me` ha un limite proprio (10 ogni 15 minuti) perché verifica una
+  password.** Senza sarebbe un oracolo per indovinarla che aggira il
+  `LOGIN_RATE_LIMIT`, con in più il vantaggio di non lasciare traccia nei login
+  falliti. Dieci e non cinque perché da lì si salva anche il solo nome, e
+  sbagliare due volte un modulo che non chiede credenziali è normale.
+- **Risponde con l'utente intero e non 204**, per la stessa ragione per cui
+  `PATCH /settings` risponde con la riga intera: l'email esce normalizzata, e chi
+  scrive `Mario@Gmail.com` deve rileggere `mario@gmail.com`.
+- **Il token non viene riemesso dopo un cambio di nome.** Il JWT porta solo
+  `userId` e `authenticate` rilegge l'utente dal database a ogni richiesta:
+  quello che resta vecchio è unicamente la copia in memoria del frontend, ed è
+  ciò che `adoptUser` sostituisce.
+- **`routes/auth.test.ts` è il primo test delle rotte di autenticazione.** Fino
+  alla pagina del profilo l'autenticazione era coperta solo a livello di
+  servizio: là si vede cosa succede al database, non cosa attraversa davvero
+  l'API — il 401 senza token, il 400 su una chiave in più, l'email normalizzata
+  nella risposta.
 - **I test del servizio girano contro un PostgreSQL vero.** La rotazione dei
   token vive nei vincoli di unicità e nelle transizioni di stato di una riga: con
   un finto client Prisma il test verificherebbe soltanto sé stesso. Ogni test crea
@@ -902,6 +937,48 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   ed è per questo che va montato dentro `<Route path="/spese/:id">`, altrimenti
   `useParams` restituisce un oggetto vuoto e il test prova un caso che
   dall'applicazione non si raggiunge.
+- **La pagina del profilo non ha una query.** `lib/profile.ts` espone solo
+  mutazioni: l'utente sta già nello store di sessione, che si ricostruisce dal
+  cookie all'avvio e che l'API rilegge dal database a ogni richiesta. Un
+  `userQueryOptions()` su `GET /auth/me` duplicherebbe uno stato che esiste già,
+  e alla prima divergenza aprirebbe la domanda «quale dei due è quello vero».
+- **`adoptUser` sostituisce l'utente senza toccare token e scadenza**, ed è la
+  sorella pubblica di `adoptSession`. Senza, il nome nell'intestazione
+  resterebbe quello vecchio fino al ricaricamento, proprio nel punto in cui si è
+  appena cliccato per cambiarlo. Non fa nulla se lo stato non è `authenticated`:
+  la risposta di un salvataggio può arrivare dopo che si è premuto «Esci», e non
+  deve resuscitare la sessione.
+- **Conferma dell'indirizzo e password compaiono solo quando l'email cambia
+  davvero.** La comparsa progressiva è il punto dell'intera pagina: chi sta
+  correggendo il proprio nome non deve vedersi chiedere una credenziale per un
+  campo che non ha toccato.
+- **Due `<form>` separati e non uno solo.** Sono due richieste a due rotte
+  diverse, con due esiti e due errori: un pulsante unico dovrebbe decidere cosa
+  dire quando la prima riesce e la seconda no, e qualunque cosa decidesse
+  sarebbe una bugia in uno dei due casi.
+- **Il confronto fra le due caselle è un controllo del browser**, come le
+  complaint locali della pagina degli avvisi. Non sta in `packages/shared`:
+  sarebbe uno schema che l'API non usa mai, cioè peso morto nel bundle dell'API
+  e una seconda verità sul formato del patch.
+- **Gli errori arrivano da tre sorgenti sommate nello stesso oggetto**:
+  `fieldErrors` per i dettagli di Zod, le complaint locali dei due confronti, e
+  una mappatura per codice — 401 `INVALID_CREDENTIALS` sotto la password, 409
+  `EMAIL_ALREADY_USED` sotto l'indirizzo. Senza la terza, un indirizzo già preso
+  comparirebbe come riga rossa generica in fondo invece che sotto la casella da
+  riscrivere.
+- **`autoComplete` di `TextField` è un'unione ristretta, non `string`.** Senza
+  `new-password` il gestore di password riempie la casella «nuova» con quella
+  vecchia, e chi salva senza guardare non cambia niente credendo di aver
+  cambiato tutto; un refuso in una stringa libera darebbe lo stesso risultato
+  senza nessun errore.
+- **«Profilo» è in coda al menù delle impostazioni, non in testa.** La prima
+  voce dell'elenco e il reindirizzamento di `/impostazioni` sono due cose
+  separate: mettendolo per primo il menù direbbe una cosa e l'indirizzo nudo, che
+  punta a `categorie`, un'altra.
+- **Il nome nell'intestazione è un collegamento, non un menù a tendina**, e resta
+  `hidden sm:inline` com'era. Su schermo stretto sparisce, ma
+  `/impostazioni/profilo` si raggiunge comunque dal menù: è una scorciatoia, non
+  l'unica via.
 
 ### Infrastruttura locale
 
@@ -1219,9 +1296,11 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   porta l'archivio documenti. Il campo resta scoperto dai test del client.
 - **Il bundle va rimisurato a ogni fase.** Le tre pagine delle spese l'hanno
   portato da 587 a 633 kB (186 kB gzip); la campanella, il popover e la pagina
-  degli avvisi da 633 a **655 kB (191 kB gzip)**, misurati, contro i ~660
-  stimati. La crescita resta proporzionata, ma oltre i 700 kB conviene
-  anticipare il primo `React.lazy` invece di aspettare Recharts.
+  degli avvisi da 633 a 655 kB (191 kB gzip), misurati, contro i ~660 stimati;
+  la pagina del profilo da 655 a **660 kB (192 kB gzip)**, contro i +4 kB
+  stimati, senza nessuna dipendenza né primitiva shadcn nuova. La crescita resta
+  proporzionata, ma oltre i 700 kB conviene anticipare il primo `React.lazy`
+  invece di aspettare Recharts.
 - **Un'email fallita non viene mai ritentata.** La riga `ReminderLog` resta con
   `succeeded = false` e il giro successivo la salta, perché la chiave esiste già.
   È voluto — è la scelta che garantisce «al massimo una volta» — ma significa che
@@ -1342,3 +1421,28 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   stesso ordine già imposto dall'IaC con `preserve()` e la regola «omit means
   delete». Vale anche al contrario: togliere una variabile va fatto dopo aver
   rilasciato il codice che smette di leggerla.
+- **Il nuovo indirizzo email non viene verificato.** Nessuna email di conferma,
+  nessuno stato «in attesa»: il campo cambia e basta. Le due caselle da
+  riempire, la password attuale e il fatto che l'indirizzo sia anche quello con
+  cui si accede sono gli unici argini. Un refuso confermato due volte si
+  corregge **solo dal database**, e l'unico modo oggi è una `railway ssh` sul
+  servizio `api` con lo script passato a `node` da stdin — motivo per cui i
+  punti sull'email vanno provati in locale prima di toccarla in produzione.
+- **Non c'è un recupero della password dimenticata.** Dalla schermata di login
+  non si esce: cambiare password richiede di conoscerla già. Con un solo utente
+  la conseguenza è che l'unica via di ripristino è scrivere a mano un hash
+  bcrypt nel database. Richiede un token a scadenza su tabella e un'email, cioè
+  la stessa meccanica del refresh token ma per un uso solo.
+- **L'account non si cancella dall'interfaccia**, e nemmeno si disattiva.
+  `User.isActive` esiste ed è letto da `authenticate` a ogni richiesta, ma solo
+  una scrittura diretta in tabella può metterlo a `false`.
+- **Le sessioni non si elencano né si revocano una per una.** `RefreshToken`
+  conserva `userAgent` e `ipAddress` apposta — servono a capire cosa è successo
+  se scatta il rilevamento di riuso — ma nessuna pagina li mostra. L'unico
+  comando disponibile è indiretto: cambiare password, che le chiude tutte.
+- **La pagina del profilo è provata come le altre, cioè in accensione.** Il
+  modulo dell'identità non compare nemmeno nel test, perché legge lo store di
+  sessione e in `renderToString` lo stato è `loading`: quello che si verifica è
+  che l'albero si costruisca e che le due intestazioni ci siano. La comparsa
+  progressiva delle caselle e le tre sorgenti di errore restano coperte solo
+  dalla verifica a mano.
