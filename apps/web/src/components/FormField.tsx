@@ -37,7 +37,17 @@ interface FieldProps {
   error?: string;
   hint?: string;
   placeholder?: string;
-  type?: 'text' | 'email' | 'tel' | 'url' | 'date';
+  type?: 'text' | 'email' | 'tel' | 'url' | 'date' | 'password';
+  /**
+   * Unione ristretta e non `string`.
+   *
+   * Senza `autoComplete="new-password"` il gestore di password riempie la
+   * casella «nuova password» con quella vecchia, e chi salva senza guardare
+   * non cambia niente credendo di aver cambiato tutto. Un refuso in una
+   * stringa libera darebbe lo stesso risultato senza nessun errore: qui invece
+   * non compila.
+   */
+  autoComplete?: 'current-password' | 'new-password' | 'email' | 'name' | 'off';
   autoFocus?: boolean;
 }
 
@@ -74,6 +84,7 @@ export function TextField({
   hint,
   placeholder,
   type = 'text',
+  autoComplete,
   autoFocus,
 }: FieldProps) {
   return (
@@ -84,6 +95,7 @@ export function TextField({
         type={type}
         value={value}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         autoFocus={autoFocus}
         aria-invalid={error !== undefined}
         aria-describedby={describedBy(id, error, hint)}
