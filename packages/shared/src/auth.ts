@@ -80,10 +80,18 @@ export const loginSchema = z.object({
 });
 export type LoginInput = z.infer<typeof loginSchema>;
 
+/**
+ * Il nome mostrato, estratto dalla registrazione perché ora serve due volte.
+ *
+ * Il `trim` non è cosmetico: senza, uno spazio in coda passerebbe il `min(1)` e
+ * l'intestazione mostrerebbe un nome che sembra identico a un altro.
+ */
+const displayNameSchema = z.string().trim().min(1, 'Il nome è obbligatorio').max(120);
+
 export const registerSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
-  displayName: z.string().trim().min(1, 'Il nome è obbligatorio').max(120),
+  displayName: displayNameSchema,
 });
 export type RegisterInput = z.infer<typeof registerSchema>;
 
@@ -92,6 +100,37 @@ export const changePasswordSchema = z.object({
   newPassword: passwordSchema,
 });
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+/**
+ * Cosa si può cambiare del proprio profilo.
+ *
+ * `strictObject` come in `settingsPatchSchema`, per la stessa ragione: un campo
+ * scritto male dev'essere un 400 e non un silenzio che finge di aver salvato.
+ *
+ * La password attuale è obbligatoria solo per l'email, non per il nome. Il nome
+ * non è una credenziale, e chiedere la password per correggere un refuso nel
+ * cognome insegna a digitarla senza motivo — che è esattamente l'abitudine su
+ * cui conta il phishing.
+ *
+ * Il `path: ['currentPassword']` della seconda regola non è decorativo: senza,
+ * il messaggio uscirebbe con il campo vuoto e il frontend lo mostrerebbe come
+ * riga rossa generica in fondo al modulo, invece che sotto la casella che
+ * manca.
+ */
+export const profilePatchSchema = z
+  .strictObject({
+    displayName: displayNameSchema.optional(),
+    email: emailSchema.optional(),
+    currentPassword: z.string().min(1, 'La password attuale è obbligatoria').optional(),
+  })
+  .refine((v) => v.displayName !== undefined || v.email !== undefined, {
+    message: 'Non c’è niente da salvare',
+  })
+  .refine((v) => v.email === undefined || v.currentPassword !== undefined, {
+    message: 'Serve la password attuale per cambiare indirizzo',
+    path: ['currentPassword'],
+  });
+export type ProfilePatch = z.infer<typeof profilePatchSchema>;
 
 /** Utente come lo vede il frontend: mai l'hash, mai i campi interni. */
 export interface AuthenticatedUser {

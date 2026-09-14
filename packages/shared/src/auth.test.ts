@@ -4,6 +4,7 @@ import {
   PASSWORD_MAX_BYTES,
   changePasswordSchema,
   loginSchema,
+  profilePatchSchema,
   registerSchema,
   utf8ByteLength,
 } from './auth';
@@ -93,5 +94,44 @@ describe('changePasswordSchema', () => {
     expect(() =>
       changePasswordSchema.parse({ currentPassword: 'x', newPassword: 'corta' }),
     ).toThrow();
+  });
+});
+
+describe('profilePatchSchema', () => {
+  it('rifiuta un patch che non cambia niente', () => {
+    // Un PATCH vuoto risponderebbe 200 senza aver toccato nulla: l'utente
+    // leggerebbe «salvato» dopo aver premuto Salva su un modulo intatto.
+    expect(profilePatchSchema.safeParse({}).success).toBe(false);
+  });
+
+  it('accetta il solo nome senza chiedere la password', () => {
+    // Il nome non è una credenziale: chiederla per correggere un refuso
+    // insegnerebbe a digitarla senza motivo.
+    const parsed = profilePatchSchema.parse({ displayName: '  Federico  ' });
+    expect(parsed.displayName).toBe('Federico');
+  });
+
+  it('pretende la password attuale per cambiare indirizzo, e lo dice sul campo giusto', () => {
+    const result = profilePatchSchema.safeParse({ email: 'nuovo@easygest.test' });
+
+    expect(result.success).toBe(false);
+    // Il percorso è ciò che conta, non il numero di errori: senza, il messaggio
+    // finirebbe in fondo al modulo invece che sotto la casella da riempire.
+    expect(result.error?.issues.map((issue) => issue.path)).toContainEqual(['currentPassword']);
+  });
+
+  it('normalizza l’email in minuscolo', () => {
+    const parsed = profilePatchSchema.parse({
+      email: '  Mario@Gmail.COM ',
+      currentPassword: 'qualunque',
+    });
+    expect(parsed.email).toBe('mario@gmail.com');
+  });
+
+  it('rifiuta una chiave che non esiste invece di ignorarla', () => {
+    // `displayname` invece di `displayName` verrebbe scartato in silenzio da uno
+    // `z.object`, e il salvataggio riuscirebbe senza salvare niente.
+    const result = profilePatchSchema.safeParse({ displayName: 'F', displayname: 'F' });
+    expect(result.success).toBe(false);
   });
 });
