@@ -32,6 +32,9 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
+# `2>nul` scarta gli errori in CMD, ma in bash è una redirezione normale: crea
+# un file chiamato `nul` con dentro l'errore che si voleva buttare via.
+nul
 
 # Local infrastructure volumes
 .docker-data/
