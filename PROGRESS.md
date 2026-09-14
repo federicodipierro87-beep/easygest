@@ -1017,6 +1017,22 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   `apply` la cancella e l'API non parte più. Il valore vero sta solo nella
   dashboard, impostato via `variable set --stdin` per non farlo comparire fra gli
   argomenti del processo. È diverso da quello di sviluppo.
+- **`--stdin` non serve solo a tenere il segreto fuori da `ps`: serve a tenerlo
+  fuori da tutto ciò che conserva i comandi.** La chiave di Resend lo ha
+  dimostrato al contrario. È stata incollata in chat e usata in comandi del tipo
+  `RESEND_KEY='re_…' node -e …`, e a fine giro si è scoperto che viveva in
+  quattro posti: la trascrizione della conversazione, la cronologia della shell,
+  la variabile su Railway e — quello inatteso —
+  `.claude/settings.local.json`, dove il meccanismo di approvazione dei comandi
+  ne conserva il **testo letterale**, chiave compresa. Nessuno di questi è
+  arrivato su GitHub, perché quel file è in `.gitignore` e la chiave è stata
+  revocata, ma la lezione regge: un segreto passato come argomento o come
+  variabile inline sopravvive al comando che lo usava, in posti che non si
+  pensava di star scrivendo. La rotazione è stata fatta con la regola opposta —
+  uno script crea la chiave, la prova e la passa allo `stdin` del CLI senza mai
+  stamparla — e infatti della chiave nuova non c'è traccia da nessuna parte. Vale
+  anche restringere i permessi: quella vecchia era `full_access` e poteva gestire
+  l'account, la nuova è di solo invio e legata al dominio verificato.
 - **Il seed di produzione si lancia dentro il container**, con
   `railway ssh --service api` seguito da `npm run seed -w @easygest/api`.
   Il container ha il sorgente e le devDependencies
