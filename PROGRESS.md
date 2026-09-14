@@ -1228,6 +1228,22 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   per riprovare bisogna cancellare quella riga a mano in `psql`. Un secondo
   tentativo automatico richiederebbe di distinguere gli errori temporanei da
   quelli permanenti, e sbagliando quella distinzione si rimanda tutto.
+- **Un riepilogo vuoto brucia la settimana.** Quando tutte e quattro le sezioni
+  sono vuote il digest non parte, ma la riga di deduplica si scrive lo stesso e
+  la sua chiave è settimanale: se i dati arrivano più tardi nello stesso lunedì,
+  quel riepilogo non arriva più. Non è teorico, è successo in produzione il
+  2026-09-14 — riga `DIGEST:…:2026-W38:EMAIL` scritta alle 10:42 su un database
+  senza spese, prima spesa inserita alle 18:11, e i due giri successivi l'hanno
+  saltata. La riga però serve, perché senza ogni riavvio dello stesso giorno ci
+  riproverebbe: la correzione non è toglierla, è permettere che un «non inviato
+  perché vuoto» venga ripreso in giornata, cosa che un «inviato» non deve poter
+  fare.
+- **`succeeded = false` non vuol dire «fallita».** Un riepilogo vuoto lascia
+  esattamente quella riga, con `errorMessage` a «riepilogo vuoto, non inviato»:
+  il discriminante è il messaggio, non il booleano. Va scritto perché la verifica
+  suggerita in fase di piano — «controllare che nessuna riga sia
+  `succeeded = false`» — è sbagliata, e presa alla lettera manda a cercare un
+  guasto che non esiste.
 - **Le scadute senza rinnovo automatico non ricevono nessun avviso.** Lo sweep
   non le tocca — giustamente, perché non sono state pagate — ma nemmeno i
   promemoria le nominano, dato che quelli guardano avanti e non indietro.
