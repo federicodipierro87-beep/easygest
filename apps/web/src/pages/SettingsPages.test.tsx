@@ -11,6 +11,7 @@ import { settingsKeys } from '@/lib/settings';
 import { AlertsSettingsPage } from './AlertsSettingsPage';
 import { CategoriesPage } from './CategoriesPage';
 import { PaymentMethodsPage } from './PaymentMethodsPage';
+import { ProfileSettingsPage } from './ProfileSettingsPage';
 
 /**
  * Prova di accensione delle pagine di configurazione.
@@ -125,6 +126,26 @@ describe('avvisi', () => {
   });
 });
 
+describe('profilo', () => {
+  it('mostra i due moduli separati', () => {
+    // Sono due richieste a due rotte diverse: un modulo solo dovrebbe decidere
+    // cosa dire quando la prima riesce e la seconda no.
+    const markup = html(<ProfileSettingsPage />);
+
+    expect(markup).toContain('Profilo');
+    expect(markup).toContain('Password');
+    expect(markup).toContain('Cambia password');
+  });
+
+  it('avverte che cambiare password chiude le altre sessioni', () => {
+    // È un effetto vero: `changePassword` revoca tutte le famiglie tranne la
+    // corrente, e va detto prima, non scoperto ritrovandosi fuori dal telefono.
+    const markup = html(<ProfileSettingsPage />);
+
+    expect(markup).toContain('altre sessioni');
+  });
+});
+
 describe('menù delle impostazioni', () => {
   it('elenca le sezioni configurabili', () => {
     const markup = html(<SettingsLayout />);
@@ -135,5 +156,6 @@ describe('menù delle impostazioni', () => {
     expect(markup).toContain('/impostazioni/categorie');
     expect(markup).toContain('/impostazioni/metodi-di-pagamento');
     expect(markup).toContain('/impostazioni/avvisi');
+    expect(markup).toContain('/impostazioni/profilo');
   });
 });

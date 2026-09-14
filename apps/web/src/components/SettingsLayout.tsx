@@ -6,6 +6,10 @@ const PAGES = [
   { to: '/impostazioni/categorie', label: 'Categorie' },
   { to: '/impostazioni/metodi-di-pagamento', label: 'Metodi di pagamento' },
   { to: '/impostazioni/avvisi', label: 'Avvisi' },
+  // In coda e non in testa: la prima voce di questo elenco e il reindirizzamento
+  // di `App.tsx` sono due cose separate, e metterci il profilo qui sopra
+  // lascerebbe l'indirizzo nudo `/impostazioni` a puntare ancora alle categorie.
+  { to: '/impostazioni/profilo', label: 'Profilo' },
 ];
 
 /**

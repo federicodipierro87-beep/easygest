@@ -12,6 +12,7 @@ import { ExpenseDetailPage } from '@/pages/ExpenseDetailPage';
 import { ExpensesPage } from '@/pages/ExpensesPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { PaymentMethodsPage } from '@/pages/PaymentMethodsPage';
+import { ProfileSettingsPage } from '@/pages/ProfileSettingsPage';
 import { VendorsPage } from '@/pages/VendorsPage';
 
 /**
@@ -60,6 +61,7 @@ export function App() {
             <Route path="categorie" element={<CategoriesPage />} />
             <Route path="metodi-di-pagamento" element={<PaymentMethodsPage />} />
             <Route path="avvisi" element={<AlertsSettingsPage />} />
+            <Route path="profilo" element={<ProfileSettingsPage />} />
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
