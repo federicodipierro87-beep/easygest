@@ -207,6 +207,57 @@ describe('rinnovo dell’access token', () => {
       'Bearer token-2',
     ]);
   });
+
+  it('non rinnova per un 401 che parla della password e non della sessione', async () => {
+    // Una password attuale sbagliata su `/auth/change-password` risponde 401
+    // `INVALID_CREDENTIALS`: ritentarla brucerebbe una rotazione del refresh
+    // token per rifare una richiesta che fallirà identica, e con due schede
+    // aperte quel rinnovo di troppo può far revocare l'intera famiglia — cioè
+    // un logout a caso causato da un refuso.
+    route('/auth/login', () => Promise.resolve(json(200, sessionBody('token-1'))));
+    route('/auth/refresh', () => Promise.resolve(json(200, sessionBody('token-2'))));
+    route('/auth/change-password', () =>
+      Promise.resolve(json(401, apiError('INVALID_CREDENTIALS'))),
+    );
+
+    const { login, authFetch, ApiError } = await loadSession();
+    await login({ email: 'tizio@example.com', password: 'password-lunghissima' });
+
+    await expect(authFetch('/auth/change-password', { method: 'POST' })).rejects.toBeInstanceOf(
+      ApiError,
+    );
+
+    expect(countOf('/auth/change-password')).toBe(1);
+    expect(countOf('/auth/refresh')).toBe(0);
+  });
+});
+
+describe('adozione dell’utente aggiornato', () => {
+  it('sostituisce il nome senza toccare il token', async () => {
+    route('/auth/login', () => Promise.resolve(json(200, sessionBody('token-1'))));
+    route('/protetta', () => Promise.resolve(json(200, { ok: true })));
+
+    const { login, adoptUser, authFetch, getSessionSnapshot } = await loadSession();
+    await login({ email: 'tizio@example.com', password: 'password-lunghissima' });
+
+    adoptUser({ id: 'u1', email: 'tizio@example.com', displayName: 'Tizio Rinominato' });
+
+    expect(getSessionSnapshot().user?.displayName).toBe('Tizio Rinominato');
+    // Il token porta solo `userId` e l'API rilegge l'utente a ogni richiesta:
+    // rinnovarlo per un nome cambiato sarebbe una rotazione per niente.
+    await authFetch('/protetta');
+    expect(countOf('/auth/refresh')).toBe(0);
+    expect(recorded.at(-1)?.authorization).toBe('Bearer token-1');
+  });
+
+  it('non resuscita una sessione già chiusa', async () => {
+    // La risposta di un salvataggio può arrivare dopo che si è premuto «Esci».
+    const { adoptUser, getSessionSnapshot } = await loadSession();
+
+    adoptUser({ id: 'u1', email: 'tizio@example.com', displayName: 'Tizio' });
+
+    expect(getSessionSnapshot().status).toBe('loading');
+  });
 });
 
 describe('ripresa della sessione all’avvio', () => {

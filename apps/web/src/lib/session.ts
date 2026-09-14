@@ -75,6 +75,23 @@ function adoptSession(session: AuthSession): void {
   setState({ status: 'authenticated', user: session.user });
 }
 
+/**
+ * Sostituisce l'utente senza toccare token e scadenza.
+ *
+ * Il token non va riemesso: porta solo `userId`, e l'API rilegge l'utente dal
+ * database a ogni richiesta. Quello che resta vecchio è la copia in memoria, e
+ * senza questa funzione il nome nell'intestazione resterebbe quello di prima
+ * fino al ricaricamento della pagina — proprio nel punto in cui si è appena
+ * cliccato per cambiarlo.
+ *
+ * Non fa nulla se lo stato non è `authenticated`: una risposta arrivata dopo un
+ * logout non deve resuscitare la sessione.
+ */
+export function adoptUser(user: AuthenticatedUser): void {
+  if (state.status !== 'authenticated') return;
+  setState({ status: 'authenticated', user });
+}
+
 function forgetSession(): void {
   accessToken = null;
   expiresAt = 0;
@@ -160,7 +177,24 @@ export async function authFetch<T>(path: string, init: RequestInit = {}): Promis
   try {
     return await apiFetch<T>(path, withBearer(init, used));
   } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 401) throw error;
+    /**
+     * Solo `unauthenticated` merita un ritentativo: è l'unico 401 che un token
+     * nuovo può risolvere, perché `plugins/auth.ts` lo emette per token
+     * assente, scaduto o non valido.
+     *
+     * Un 401 `invalidCredentials` dice l'opposto — il problema è la password
+     * digitata, non la sessione — e ritentandolo si brucerebbe una rotazione
+     * del refresh token per rifare una richiesta che fallirà identica. Con due
+     * schede aperte quel rinnovo di troppo può far scattare la revoca
+     * dell'intera famiglia: un logout a caso causato da un refuso.
+     */
+    if (
+      !(error instanceof ApiError) ||
+      error.status !== 401 ||
+      error.code !== AUTH_ERROR_CODES.unauthenticated
+    ) {
+      throw error;
+    }
 
     /**
      * Se nel frattempo qualcun altro ha già rinnovato, il token in memoria è
