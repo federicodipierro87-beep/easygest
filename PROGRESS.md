@@ -72,6 +72,25 @@ giorno in cui fosse servito. Dato che esiste già un dominio verificato,
 `MAIL_FROM` è passato a `no-reply@easysolution-dp.com`, che è firmato DKIM e
 scrive a chiunque.
 
+La pagina del profilo — nome, indirizzo e password da `/impostazioni/profilo` —
+è stata aggiunta fuori dalle fasi, perché non ne richiedeva una: `displayName`,
+`email` e `POST /auth/change-password` esistevano dalla migrazione iniziale e
+aspettavano solo un'interfaccia.
+
+È stata verificata **direttamente in produzione**, com'è la regola qui. Il punto
+che contava è stato confermato: sbagliando la password attuale parte **una sola**
+richiesta, senza nessun `/auth/refresh` di troppo. È l'unica prova possibile del
+ritentativo ristretto ai soli 401 `UNAUTHENTICATED`, perché il sintomo che quel
+fix evita — due schede aperte, un rinnovo di troppo, la revoca dell'intera
+famiglia di token, cioè un logout che sembra casuale — non si riproduce nei test,
+che un browser non ce l'hanno.
+
+Il prezzo di quella scelta va però scritto, perché qui era più alto del solito:
+i passi sull'email scrivono sull'indirizzo **con cui si accede**, non esiste
+un'email di conferma che segnali un refuso, e l'unico recupero sarebbe stato
+collegarsi al database. Vale per tutto ciò che tocca credenziali, e tornerà a
+valere il giorno in cui si aggiungerà il recupero della password.
+
 ---
 
 ## Flusso di lavoro
