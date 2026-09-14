@@ -55,6 +55,17 @@ cron **non** è un secondo servizio Railway, e i promemoria hanno una regola di
 scatto («l'anticipo più vicino») invece di mandarne uno per ogni anticipo
 configurato.
 
+È in produzione e accesa: i log dell'avvio mostrano `transport="resend"` e
+`Lavori pianificati` con `nextRun` alle 05:00 UTC, cioè le 07:00 di Roma con
+l'ora legale — la prova che il fuso è gestito da croner e non a mano. **Una cosa
+però non è ancora stata verificata davvero: che un'email arrivi.** Finora
+`emailsSent` è sempre zero perché il database di produzione non ha spese, quindi
+il percorso Resend è configurato ma mai esercitato. Il primo invio vero è anche
+il primo momento in cui si scoprirà se `MAIL_FROM` va bene: con il dominio
+condiviso `onboarding@resend.dev` si può scrivere **solo** al titolare
+dell'account Resend, e se l'indirizzo di `User.email` non coincide la consegna
+fallisce con un 422 — bruciando la chiave di deduplica, perché non si ritenta.
+
 ---
 
 ## Flusso di lavoro
@@ -1262,3 +1273,30 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   impedito a Railway di costruire. Il comando giusto prima di ogni push è
   `npm run format:check && npm run lint && npm run typecheck && npm test`, nello
   stesso ordine del workflow.
+- **Il primo giro in produzione non può essere deliberato, e il piano credeva di
+  sì.** La verifica prevedeva di lanciarlo a mano dal pulsante, guardando i
+  contatori, «perché lo sweep marcherà `PAID` tutte le scadute con rinnovo
+  automatico, e su dati veri possono essere molte». Ma il recupero all'avvio
+  esegue il giro giornaliero venti secondi dopo ogni partenza del processo: al
+  primo deploy con `CRON_ENABLED=true` era già finito — `Giro finito` alle
+  10:42:24, contro le 10:42:03 dell'avvio — prima che qualcuno potesse premere
+  niente. Le due decisioni si contraddicono, e a vincere è il recupero, perché è
+  codice e l'altra era una riga di documentazione. Stavolta non è costato nulla
+  solo perché il database di produzione è vuoto: `occurrencesSynced=0`,
+  `markedPaid=0`, `remindersPlanned=0`. Con dati veri lo sweep avrebbe scritto
+  senza che nessuno guardasse. Chi vuole davvero un primo giro sorvegliato deve
+  fare il primo deploy con `CRON_ENABLED=false`, premere il pulsante, e solo poi
+  accendere il cron — oppure il recupero all'avvio va reso saltabile.
+- **Una validazione più severa spedita prima della configurazione che pretende
+  rende `main` non deployabile.** La correzione che fa controllare a `parseEnv` il
+  trasporto _risolto_ è arrivata su `main` quando in produzione `RESEND_API_KEY`
+  non c'era ancora: `NODE_ENV=production` da solo deduce `resend`, quindi il
+  contenitore nuovo è uscito con exit 78 ripetendo che `RESEND_API_KEY` è
+  obbligatoria quando le email partono da Resend, e il deploy è fallito. Non è
+  andato giù niente — l'healthcheck di Railway non ha promosso la release e quello
+  vecchio ha continuato a servire — ma per una dozzina d'ore ogni push sarebbe
+  stato irrilasciabile, e se ne è avuta notizia solo andando a guardare. La
+  regola generale: **prima la variabile, poi il codice che la esige**, che è lo
+  stesso ordine già imposto dall'IaC con `preserve()` e la regola «omit means
+  delete». Vale anche al contrario: togliere una variabile va fatto dopo aver
+  rilasciato il codice che smette di leggerla.
