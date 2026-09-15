@@ -13,6 +13,7 @@ import { registerClientRoutes } from './routes/clients';
 import { registerExpenseRoutes } from './routes/expenses';
 import { registerHealthRoutes } from './routes/health';
 import { registerJobRoutes } from './routes/jobs';
+import { registerDashboardRoutes } from './routes/dashboard';
 import { registerNotificationRoutes } from './routes/notifications';
 import { registerOccurrenceRoutes } from './routes/occurrences';
 import { registerPaymentMethodRoutes } from './routes/payment-methods';
@@ -157,6 +158,7 @@ export async function buildApp(env: Env, overrides: AppOverrides = {}): Promise<
   registerPaymentMethodRoutes(app);
   registerExpenseRoutes(app);
   registerOccurrenceRoutes(app);
+  registerDashboardRoutes(app);
   registerNotificationRoutes(app);
   registerSettingsRoutes(app);
   registerJobRoutes(app, env, overrides.fxFetcher);
