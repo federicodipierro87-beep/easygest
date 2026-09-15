@@ -5,9 +5,11 @@ import {
   expenseListQuerySchema,
   generatesOccurrences,
   occurrencePatchSchema,
+  rebillGrossCents,
   rebilledAmount,
   resolveAmount,
 } from './expenses';
+import { applyBasisPoints } from './money';
 import { formatIsoDate } from './recurrence';
 
 /** Il minimo che passa, su cui ogni prova cambia una cosa sola. */
@@ -200,6 +202,63 @@ describe('calcolo del riaddebito', () => {
         12_200,
       ),
     ).toBe(20_000);
+  });
+});
+
+describe('riaddebito da sommare', () => {
+  // `rebillGrossCents` è `rebilledAmount` con il `null` schiacciato a zero.
+  // Questi test fissano il punto in cui le due funzioni divergono — che è
+  // l'unico motivo per cui la seconda esiste.
+
+  it('senza riaddebito vale zero, perch\u00e9 un totale non sa cosa farsene di `null`', () => {
+    expect(
+      rebillGrossCents(
+        { rebillMode: 'NONE', rebillMarkupBp: null, rebillAmountCents: null },
+        12_200,
+      ),
+    ).toBe(0);
+  });
+
+  it('a forfait senza importo vale zero e non `NaN`', () => {
+    // Lo schema impedisce di salvare un `FIXED` senza importo, ma il tipo lo
+    // ammette e le righe vecchie non passano dallo schema. Una somma che
+    // incontra un `null` diventa `NaN` e resta `NaN` fino alla pagina.
+    expect(
+      rebillGrossCents(
+        { rebillMode: 'FIXED', rebillMarkupBp: null, rebillAmountCents: null },
+        12_200,
+      ),
+    ).toBe(0);
+  });
+
+  it('negli altri casi dice esattamente quello che dice `rebilledAmount`', () => {
+    const passthrough = {
+      rebillMode: 'PASSTHROUGH',
+      rebillMarkupBp: null,
+      rebillAmountCents: null,
+    } as const;
+    const markup = {
+      rebillMode: 'MARKUP',
+      rebillMarkupBp: 2_000,
+      rebillAmountCents: null,
+    } as const;
+    const fixed = { rebillMode: 'FIXED', rebillMarkupBp: null, rebillAmountCents: 20_000 } as const;
+
+    expect(rebillGrossCents(passthrough, 12_200)).toBe(rebilledAmount(passthrough, 12_200));
+    expect(rebillGrossCents(markup, 1_049)).toBe(rebilledAmount(markup, 1_049));
+    expect(rebillGrossCents(fixed, 12_200)).toBe(rebilledAmount(fixed, 12_200));
+  });
+
+  it('il ricarico \u00e8 quello di `applyBasisPoints`, non una moltiplicazione a mano', () => {
+    // Se qualcuno riscrivesse il markup con un `* 1.2`, 1049 darebbe 1258,8 e
+    // poi 1258 per troncamento: questo test è la differenza di un centesimo
+    // che lo rivela.
+    expect(
+      rebillGrossCents(
+        { rebillMode: 'MARKUP', rebillMarkupBp: 2_000, rebillAmountCents: null },
+        1_049,
+      ),
+    ).toBe(1_049 + applyBasisPoints(1_049, 2_000));
   });
 });
 

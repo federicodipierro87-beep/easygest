@@ -342,6 +342,34 @@ export function rebilledAmount(
   }
 }
 
+/**
+ * Lo stesso importo, ma per sommarlo.
+ *
+ * `rebilledAmount` distingue «non riaddebitata» da «riaddebitata a zero», e in
+ * una riga di dettaglio la distinzione è il punto: una cella vuota e uno zero
+ * dicono due cose diverse. In un totale no — `null` sommato a un numero è
+ * `NaN`, e un `NaN` che arriva in pagina si stampa così com'è.
+ *
+ * Quindi due funzioni e non due implementazioni: questa è quella sopra con il
+ * `null` schiacciato a zero. Scriverne una seconda copia dei quattro casi
+ * significherebbe che fra un anno il riaddebito con markup verrebbe corretto in
+ * un posto solo.
+ *
+ * Il conto sta nella valuta della spesa, non in quella base. Portarcelo
+ * richiede `applyRate`, che usa `Prisma.Decimal` e non può stare qui: il
+ * cambio è congelato sull'occorrenza e lo applica l'API.
+ */
+export function rebillGrossCents(
+  expense: {
+    rebillMode: RebillMode;
+    rebillMarkupBp: number | null;
+    rebillAmountCents: number | null;
+  },
+  grossCents: number,
+): number {
+  return rebilledAmount(expense, grossCents) ?? 0;
+}
+
 export interface Expense {
   id: string;
   name: string;
