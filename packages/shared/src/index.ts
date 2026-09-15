@@ -9,6 +9,7 @@ export * from './notifications';
 export * from './payment-methods';
 export * from './recurrence';
 export * from './reminders';
+export * from './reports';
 export * from './resources';
 export * from './settings';
 export * from './vendors';
