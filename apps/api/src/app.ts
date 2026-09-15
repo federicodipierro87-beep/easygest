@@ -17,6 +17,7 @@ import { registerDashboardRoutes } from './routes/dashboard';
 import { registerNotificationRoutes } from './routes/notifications';
 import { registerOccurrenceRoutes } from './routes/occurrences';
 import { registerPaymentMethodRoutes } from './routes/payment-methods';
+import { registerReportRoutes } from './routes/reports';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerVendorRoutes } from './routes/vendors';
 import type { Fetcher } from './services/frankfurter';
@@ -160,6 +161,7 @@ export async function buildApp(env: Env, overrides: AppOverrides = {}): Promise<
   registerOccurrenceRoutes(app);
   registerDashboardRoutes(app);
   registerNotificationRoutes(app);
+  registerReportRoutes(app);
   registerSettingsRoutes(app);
   registerJobRoutes(app, env, overrides.fxFetcher);
 

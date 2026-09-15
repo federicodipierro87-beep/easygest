@@ -148,6 +148,18 @@ export interface ReportSummary {
   byMonth: ReportMonthBucket[];
 }
 
+/**
+ * Il dettaglio, con la dichiarazione di essere completo o no.
+ *
+ * `truncated` non è un avviso da mostrare in un angolo: blocca il download.
+ * Un CSV tagliato in silenzio è peggio di nessun CSV, perché chi lo apre somma
+ * una colonna incompleta e non ha modo di accorgersene.
+ */
+export interface ReportLedger {
+  rows: ReportRow[];
+  truncated: boolean;
+}
+
 export const NO_CATEGORY_LABEL = 'Senza categoria';
 export const NO_VENDOR_LABEL = 'Senza fornitore';
 export const NO_CLIENT_LABEL = 'Non riaddebitata';
