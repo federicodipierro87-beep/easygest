@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
-import type { OccurrenceStatus } from './expenses';
+import { csvAmount, csvDate, csvText, toCsv } from './csv';
+import { OCCURRENCE_STATUS_LABELS, type OccurrenceStatus } from './expenses';
 import { BP_SCALE, divideRoundHalfUp } from './money';
 import { addMonths, differenceInDays, formatIsoDate, isoDateSchema } from './recurrence';
 
@@ -343,4 +344,130 @@ export function foldReport(
     })),
     byMonth: [...months.values()],
   };
+}
+
+/**
+ * Le intestazioni del dettaglio, nell'ordine in cui escono le celle.
+ *
+ * Due colonne portano la valuta base nel nome. Senza, «Totale» comparirebbe
+ * due volte — una in valuta della riga e una convertita — e chi apre il foglio
+ * sceglierebbe a caso quale sommare.
+ */
+export function ledgerCsvHeaders(baseCurrency: string): string[] {
+  return [
+    'Scadenza',
+    'Spesa',
+    'Categoria',
+    'Fornitore',
+    'Cliente',
+    'Stato',
+    'Imponibile',
+    'IVA %',
+    'Totale',
+    'Valuta',
+    'Cambio',
+    `Totale in ${baseCurrency}`,
+    `Riaddebito in ${baseCurrency}`,
+    'Competenza dal',
+    'Competenza al',
+    'Pagata il',
+    'Confermata il',
+  ];
+}
+
+function ledgerCsvRow(row: ReportRow): string[] {
+  /**
+   * **La cella del totale convertito è vuota su una saltata.**
+   *
+   * È il punto in cui le due promesse del modulo si tengono insieme. Il
+   * dettaglio contiene tutte le righe del periodo, comprese `SKIPPED` e
+   * `CANCELLED`: il CSV racconta cosa è successo. `foldReport` invece le conta
+   * zero: il riepilogo dice cosa è costato. Lasciare l'importo in cella
+   * farebbe sì che la somma della colonna in Excel superasse il numero
+   * mostrato a schermo, e la differenza si scoprirebbe in fondo a un foglio di
+   * calcolo, mesi dopo. Una scadenza saltata non è costata quella cifra: la
+   * cella vuota dice il vero, e lo stato in colonna 6 spiega perché è vuota.
+   *
+   * Le colonne in valuta originale non si svuotano: sono documentali e non
+   * sommabili comunque, perché mescolano valute diverse.
+   */
+  const counts = countsTowardReport(row.status);
+
+  return [
+    // La data su cui `foldReport` attribuisce i mesi: è quella che rende la
+    // serie mensile ricostruibile con una tabella pivot.
+    csvDate(row.dueDate),
+    csvText(row.expenseName),
+    // L'etichetta e non la cella vuota: così una pivot per categoria dà gli
+    // stessi gruppi che si leggono nella pagina, scoperti compresi.
+    csvText(row.categoryName ?? NO_CATEGORY_LABEL),
+    csvText(row.vendorName ?? NO_VENDOR_LABEL),
+    csvText(row.clientName ?? NO_CLIENT_LABEL),
+    // In italiano: `PLANNED` in un foglio dato al commercialista è rumore.
+    csvText(OCCURRENCE_STATUS_LABELS[row.status]),
+    csvAmount(row.netCents),
+    /**
+     * I punti base hanno **la stessa scala dei centesimi**: `2200` → `22,00`,
+     * cioè punti percentuali, come già fa `percentFromBasisPoints` riusando
+     * `euroFromCents`. Una formula nel foglio divide per 100 se serve la
+     * frazione. Passa da `csvAmount` e non da `csvText` perché un'aliquota
+     * negativa comincia per `-` e verrebbe apostrofata, smettendo di essere un
+     * numero filtrabile.
+     */
+    csvAmount(row.vatRateBp),
+    // Nella valuta della riga. In forfettario l'IVA sulle passive è un costo,
+    // quindi il lordo è il numero vero.
+    csvAmount(row.grossCents),
+    // Senza, le due colonne qui sopra sarebbero numeri di valute diverse
+    // sommati per sbaglio.
+    csvText(row.currency),
+    /**
+     * **Resta testo, col punto e i dieci decimali.** È un prezzo voluto: non
+     * essendo moltiplicabile in Excel, nessuno ricalcola il controvalore
+     * ottenendo un arrotondamento diverso da quello di `applyRate`.
+     */
+    csvText(row.fxRate),
+    counts ? csvAmount(row.baseGrossCents) : '',
+    // Senza, il margine teorico per cliente non sarebbe ricostruibile dal file.
+    counts ? csvAmount(row.rebillBaseCents) : '',
+    // Lasciano possibile a mano l'imputazione per competenza, che `foldReport`
+    // dichiara di non fare.
+    csvDate(row.periodStart),
+    csvDate(row.periodEnd),
+    csvDate(row.paidAt),
+    // Vuota su una riga «Pagata» è l'unico modo di ritrovare nel foglio le
+    // righe marcate dal cron senza che nessuno le abbia guardate.
+    csvDate(row.confirmedAt),
+  ];
+}
+
+/**
+ * Il dettaglio di un periodo, pronto da salvare.
+ *
+ * Sta qui accanto a `foldReport` e non in `csv.ts` per due ragioni opposte.
+ * `csv.ts` non deve conoscere nessun dominio: sa serializzare celle, non sa
+ * cosa sia una scadenza. E le due uscite — schermo e file — consumano lo
+ * stesso `ReportRow`: tenerle nello stesso file rende visibile a chi tocca
+ * l'una che deve guardare anche l'altra, che è precisamente la garanzia per
+ * cui l'API costruisce le righe una volta sola.
+ *
+ * **Escluse `occurrenceId` e `expenseId`**: UUID che nessuno legge e che fanno
+ * sembrare tecnico un foglio destinato al commercialista. Prezzo dichiarato:
+ * il file non si riaggancia alle righe dell'applicazione.
+ *
+ * `options: { baseCurrency }` per simmetria con `foldReport(rows, options)`.
+ */
+export function ledgerToCsv(rows: readonly ReportRow[], options: { baseCurrency: string }): string {
+  return toCsv(ledgerCsvHeaders(options.baseCurrency), rows.map(ledgerCsvRow));
+}
+
+/**
+ * `easygest-report-2027-01-01_2027-03-31.csv`.
+ *
+ * Date ISO perché nella cartella dei download si ordinano da sole.
+ * L'underscore fra le due perché un terzo trattino renderebbe ambiguo dove
+ * finisce la prima data e comincia la seconda.
+ */
+export function ledgerFileName(from: string, to: string): string {
+  return `easygest-report-${from}_${to}.csv`;
 }
