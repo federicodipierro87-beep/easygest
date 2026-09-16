@@ -211,6 +211,24 @@ describe('validazione del periodo', () => {
     });
     expect(response.statusCode).toBe(400);
   });
+
+  it('una data storta esce con il suo messaggio, non con «Invalid input»', async () => {
+    // `parseBody` legge `issue.message` e basta. Finché il controllo della data
+    // stava dentro un'unione, quel campo conteneva l'inglese generico di Zod e
+    // il messaggio italiano restava sepolto in `issues[0].errors`: questo è il
+    // test che lo sorveglia dalla parte da cui si vede, cioè la risposta.
+    const response = await app.inject({
+      method: 'GET',
+      url: '/reports?from=ieri&to=2027-01-01',
+      headers: alice.auth,
+    });
+
+    expect(response.statusCode).toBe(400);
+    const body = response.json<{ error: { details: { field: string; message: string }[] } }>();
+    expect(body.error.details).toEqual([
+      { field: 'from', message: 'Data non valida: «ieri», attesa 2027-03-15' },
+    ]);
+  });
 });
 
 describe('isolamento', () => {

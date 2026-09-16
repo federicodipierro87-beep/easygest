@@ -159,6 +159,20 @@ automatico su Railway e Netlify → verifica sull'URL pubblico.
 - **ESLint type-aware fin da subito.** `no-floating-promises` e
   `no-misused-promises` intercettano la classe di errori che rompe
   silenziosamente handler Fastify e job schedulati.
+- **Un'unione Zod decide il tipo, mai la validità.** Quando una `z.union`
+  fallisce, Zod non propaga il messaggio del ramo più promettente — non saprebbe
+  quale sia — ma ne mette in cima uno proprio, `Invalid input`, e seppellisce
+  quelli dei rami in `issues[0].errors`. Tutto ciò che legge `issues[0].message`
+  — `parseBody` sull'API, `fieldErrors` e `periodError` sul client — mostrerebbe
+  quell'inglese generico al posto della frase che dice cosa c'è che non va.
+  `isoDateSchema` accetta `string | Date`, quindi l'unione serve, ma il controllo
+  che la data **esista** sta dopo, in un `transform`: così `'2027-02-30'` supera
+  l'unione come stringa qualunque e si ferma con un unico `issue` che porta il
+  messaggio e il percorso giusti. All'unione resta il solo caso senza niente da
+  raccontare — valore assente, o un numero — e ha un messaggio suo, senza il
+  valore fra virgolette perché citare «undefined» non aiuta nessuno. Vale per
+  qualunque unione futura: il ramo che può fallire per merito, e non per tipo,
+  va tolto da dentro.
 
 ### Backend
 

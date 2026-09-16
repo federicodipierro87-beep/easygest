@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 
 import {
   MAX_OCCURRENCES,
@@ -11,6 +12,7 @@ import {
   formatIsoDate,
   generateSchedule,
   isValidTimeZone,
+  isoDateSchema,
   isoWeekKey,
   isoWeekday,
   occurrenceDate,
@@ -57,6 +59,68 @@ describe('giorni di calendario', () => {
     // UTC non esiste, ed è esattamente il motivo per cui le date stanno in UTC.
     expect(formatIsoDate(addDays(d('2027-03-27'), 1))).toBe('2027-03-28');
     expect(formatIsoDate(addDays(d('2027-10-30'), 1))).toBe('2027-10-31');
+  });
+});
+
+/**
+ * Lo schema di un giorno di calendario.
+ *
+ * Si prova il **messaggio**, non solo il rifiuto: che una data storta venga
+ * scartata lo si vedrebbe da `success`, ma il difetto vero era un altro — il
+ * rifiuto arrivava con scritto `Invalid input`, e quella frase finiva sotto la
+ * casella di un form e in cima alla pagina dei report. Un test su `success`
+ * sarebbe rimasto verde per tutto il tempo.
+ */
+describe('schema di un giorno di calendario', () => {
+  function messaggio(value: unknown): string | null {
+    const result = isoDateSchema.safeParse(value);
+    return result.success ? null : (result.error.issues[0]?.message ?? null);
+  }
+
+  it('accetta la stringa ISO e il Date gi\u00e0 pronto', () => {
+    expect(formatIsoDate(isoDateSchema.parse('2027-03-15'))).toBe('2027-03-15');
+    // Un istante diventa il giorno che indica in UTC, non l'istante stesso.
+    expect(formatIsoDate(isoDateSchema.parse(new Date('2027-03-15T22:30:00Z')))).toBe('2027-03-15');
+  });
+
+  it('dice quale data ha rifiutato, e in italiano', () => {
+    expect(messaggio('ieri')).toBe('Data non valida: «ieri», attesa 2027-03-15');
+    expect(messaggio('2027-02-30')).toBe('Data non valida: «2027-02-30», attesa 2027-03-15');
+  });
+
+  it('non lascia trapelare il messaggio che Zod mette sulle unioni', () => {
+    // È il punto di tutto: `z.union` non propaga il messaggio del ramo, ne mette
+    // in cima uno proprio in inglese. Se qualcuno riportasse il controllo della
+    // data dentro l'unione, questo test sarebbe l'unico ad accorgersene.
+    for (const value of ['ieri', '2027-02-30', undefined, null, 42, new Date('spazzatura')]) {
+      expect(messaggio(value)).not.toBe('Invalid input');
+      expect(messaggio(value)).toContain('Data non valida');
+    }
+  });
+
+  it('su un valore mancante non cita «undefined»', () => {
+    // Il valore fra virgolette c'è solo quando c'è qualcosa da citare.
+    expect(messaggio(undefined)).toBe('Data non valida, attesa 2027-03-15');
+    expect(messaggio(undefined)).not.toContain('undefined');
+  });
+
+  it('resta un unico errore, sul campo giusto', () => {
+    // Due `issue` per una casella vorrebbero dire due righe rosse sotto di essa;
+    // un percorso vuoto le farebbe finire in fondo al form invece che lì sotto.
+    const result = z.object({ startDate: isoDateSchema }).safeParse({ startDate: 'ieri' });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0]?.path).toEqual(['startDate']);
+  });
+
+  it('continua a lasciar passare le date assenti dove sono ammesse', () => {
+    // `.optional()` e `.nullish()` sono usati su `dueFrom`, `dueTo` e `endDate`:
+    // un'unione più severa avrebbe potuto renderli obbligatori per sbaglio.
+    expect(z.object({ a: isoDateSchema.optional() }).safeParse({}).success).toBe(true);
+    expect(
+      z.object({ a: isoDateSchema.nullish().default(null) }).safeParse({ a: null }).success,
+    ).toBe(true);
   });
 });
 

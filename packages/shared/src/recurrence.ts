@@ -101,18 +101,31 @@ export function parseIsoDate(value: string): Date | null {
  * Accetta anche un `Date` già pronto, perché il seed e i test costruiscono gli
  * oggetti direttamente mentre l'API riceve stringhe: due schemi per la stessa
  * cosa si sarebbero disallineati alla prima modifica.
+ *
+ * **L'unione decide solo il tipo, mai la validità della data.** È una
+ * distinzione che sembra pedante e non lo è: Zod, quando un'unione fallisce,
+ * non propaga il messaggio del ramo più promettente — non saprebbe quale sia —
+ * ma ne mette in cima uno proprio, `Invalid input`, e seppellisce i messaggi dei
+ * rami in `issues[0].errors`. Chiunque legga `issues[0].message`, cioè
+ * `parseBody` sull'API e `periodError` sul client, mostrerebbe quell'inglese
+ * generico al posto della frase che dice cosa c'è che non va.
+ *
+ * Mettendo il controllo della data **dopo** l'unione, un `'ieri'` supera
+ * l'unione come stringa qualunque e si ferma nel `transform`, che produce un
+ * unico `issue` con il messaggio giusto e il percorso giusto. All'unione resta
+ * il solo caso in cui non c'è niente da raccontare — manca il valore, o è un
+ * numero — e per quello ha un messaggio suo, senza il valore fra virgolette
+ * perché citare «undefined» non aiuta nessuno.
  */
-export const isoDateSchema = z.union([
-  z.string().transform((value, ctx) => {
+export const isoDateSchema = z
+  .union([z.string(), z.date()], { error: 'Data non valida, attesa 2027-03-15' })
+  .transform((value, ctx) => {
+    if (value instanceof Date) return startOfUtcDay(value);
     const parsed = parseIsoDate(value);
-    if (parsed === null) {
-      ctx.addIssue({ code: 'custom', message: `Data non valida: «${value}», attesa 2027-03-15` });
-      return z.NEVER;
-    }
-    return parsed;
-  }),
-  z.date().transform(startOfUtcDay),
-]);
+    if (parsed !== null) return parsed;
+    ctx.addIssue({ code: 'custom', message: `Data non valida: «${value}», attesa 2027-03-15` });
+    return z.NEVER;
+  });
 
 /**
  * Il giorno che è «oggi» per l'utente, non per il server.
