@@ -13,6 +13,7 @@ import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query
 
 import { ApiError } from './api';
 import { dashboardKeys } from './dashboard';
+import { reportKeys } from './reports';
 import { queryString } from './resources';
 import { authFetch } from './session';
 
@@ -175,6 +176,12 @@ export function occurrenceListQueryOptions(filters: OccurrenceFilters) {
  * senza di essa si confermerebbe una scadenza per poi tornare in dashboard e
  * ritrovarla nel riquadro «Da confermare» — che è esattamente il riquadro per
  * cui la pagina esiste.
+ *
+ * La quarta per lo stesso motivo, con una conseguenza in più: i report sono le
+ * stesse occorrenze sommate, e il dettaglio in cache è quello che finisce nel
+ * CSV. Senza, correggere una scadenza da `/scadenze` lascerebbe a schermo il
+ * vecchio totale e nel file successivo la vecchia riga — un numero sbagliato
+ * che arriva su un foglio di calcolo, dove non ha più modo di essere smentito.
  */
 function useCrossInvalidation(): () => Promise<void> {
   const queryClient = useQueryClient();
@@ -183,6 +190,7 @@ function useCrossInvalidation(): () => Promise<void> {
       queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
       queryClient.invalidateQueries({ queryKey: occurrenceKeys.all }),
       queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
+      queryClient.invalidateQueries({ queryKey: reportKeys.all }),
     ]);
   };
 }
