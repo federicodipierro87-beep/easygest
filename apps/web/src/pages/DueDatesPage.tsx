@@ -10,6 +10,7 @@ import {
 } from '@easygest/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useLocation } from 'react-router';
 
 import type { SelectOption } from '@/components/FormField';
 import { OccurrenceEditDialog } from '@/components/OccurrenceEditDialog';
@@ -27,6 +28,7 @@ import {
   type OccurrenceFilters,
 } from '@/lib/expenses';
 import { formatMoney, isoPlusDays, todayIso } from '@/lib/format';
+import type { DuePreset } from '@/pages/DashboardPage';
 
 /**
  * Tutte le scadenze, di tutte le spese.
@@ -66,6 +68,17 @@ function defaultDueFilters(): OccurrenceFilters {
     direction: 'asc',
   };
 }
+
+/**
+ * Quanto avanti guarda il riquadro «In arrivo» della dashboard.
+ *
+ * È la copia di `UPCOMING_DAYS` di `services/agenda.ts`, che sta nell'API e da
+ * qui non si può importare. La copia è dichiarata invece che nascosta: se le
+ * due divergono, il preset porta a un elenco che non contiene le righe appena
+ * viste nel riquadro, ed è il tipo di scollamento che non dà errore da nessuna
+ * parte. Prima di spostarla in `shared` conviene aspettare il terzo uso.
+ */
+const UPCOMING_DAYS = 7;
 
 interface DueWindow {
   from: string;
@@ -108,8 +121,48 @@ const STATUS_OPTIONS: SelectOption[] = [
   { value: UNCONFIRMED, label: 'Solo da confermare' },
 ];
 
+/**
+ * I filtri con cui si arriva da un riquadro dell'agenda.
+ *
+ * Ogni preset ricalca la `where` della sezione corrispondente in
+ * `services/agenda.ts:collectAgenda` (210-220): «da confermare» non ha limiti
+ * di data — una pagata non confermata di sei mesi fa va vista — mentre «in
+ * ritardo» e «in arrivo» sono le due metà della finestra intorno a oggi.
+ *
+ * Il preset sconosciuto ricade sul filtro di sempre invece di lanciare: arriva
+ * dallo stato della navigazione, che è `unknown` e può contenere qualunque cosa
+ * — anche quella lasciata lì da una versione precedente dell'applicazione.
+ */
+function presetFilters(state: unknown): OccurrenceFilters {
+  const base = defaultDueFilters();
+  const preset = (state as { preset?: unknown } | null)?.preset;
+  const today = todayIso();
+
+  switch (preset) {
+    case 'unconfirmed' satisfies DuePreset:
+      return { ...base, status: ALL, unconfirmed: true, from: '', to: '' };
+    case 'overdue' satisfies DuePreset:
+      return { ...base, status: 'PLANNED', from: '', to: isoPlusDays(today, -1) };
+    case 'upcoming' satisfies DuePreset:
+      return { ...base, status: 'PLANNED', from: today, to: isoPlusDays(today, UPCOMING_DAYS) };
+    default:
+      return base;
+  }
+}
+
 export function DueDatesPage() {
-  const [filters, setFilters] = useState<OccurrenceFilters>(defaultDueFilters);
+  /**
+   * Il preset si legge una volta sola, all'apertura.
+   *
+   * Passandolo all'inizializzatore di `useState` invece che a un `useEffect`
+   * si evita il lampeggio dell'elenco di default prima di quello filtrato, e
+   * soprattutto si evita che il preset torni a imporsi ogni volta che l'utente
+   * tocca un filtro. Il prezzo è che ricaricando la pagina lo stato della
+   * navigazione svanisce e si torna al filtro di sempre: è il debito dichiarato
+   * di non avere i filtri nell'URL.
+   */
+  const location = useLocation();
+  const [filters, setFilters] = useState<OccurrenceFilters>(() => presetFilters(location.state));
   const [correcting, setCorrecting] = useState<ExpenseOccurrence | null>(null);
 
   const debouncedQuery = useDebouncedValue(filters.q);

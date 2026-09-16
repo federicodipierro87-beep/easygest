@@ -1,6 +1,7 @@
 import type { JobName, JobResult, Settings, SettingsPatch } from '@easygest/shared';
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 
+import { dashboardKeys } from './dashboard';
 import { expenseKeys, occurrenceKeys } from './expenses';
 import { notificationKeys } from './notifications';
 import { authFetch } from './session';
@@ -39,6 +40,10 @@ export function useSettingsMutations() {
    * dell'utente: spostando il fuso il giorno può cambiare, e le due liste
    * resterebbero a schermo con i badge di ieri. È la stessa invalidazione
    * incrociata di `useExpenseMutations`, per la stessa ragione.
+   *
+   * L'agenda ci sta dentro a maggior ragione: il suo «oggi» lo decide il
+   * server leggendo proprio questo fuso, quindi cambiarlo può spostare una
+   * scadenza da «in arrivo» a «in ritardo» senza che nulla a schermo lo dica.
    */
   const update = useMutation({
     mutationFn: (patch: SettingsPatch) =>
@@ -49,6 +54,7 @@ export function useSettingsMutations() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
         queryClient.invalidateQueries({ queryKey: occurrenceKeys.all }),
+        queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
       ]);
     },
   });
@@ -78,6 +84,7 @@ export function useJobRun() {
         queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
         queryClient.invalidateQueries({ queryKey: occurrenceKeys.all }),
         queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
+        queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
       ]);
     },
   });

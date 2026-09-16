@@ -12,6 +12,7 @@ import {
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError } from './api';
+import { dashboardKeys } from './dashboard';
 import { queryString } from './resources';
 import { authFetch } from './session';
 
@@ -163,12 +164,17 @@ export function occurrenceListQueryOptions(filters: OccurrenceFilters) {
 }
 
 /**
- * Rilegge sia le spese sia le scadenze, sempre.
+ * Rilegge sia le spese sia le scadenze, sempre. E con loro la dashboard.
  *
  * Le due radici si muovono insieme in tutt'e due i versi: il server rigenera
  * le occorrenze quando la spesa cambia, e ricalcola `nextDueDate` e
  * `occurrenceCount` della spesa quando cambia un'occorrenza. Invalidarne una
  * sola lascerebbe a schermo un elenco che contraddice quello accanto.
+ *
+ * La terza chiave non è un di più: l'agenda è fatta delle stesse occorrenze, e
+ * senza di essa si confermerebbe una scadenza per poi tornare in dashboard e
+ * ritrovarla nel riquadro «Da confermare» — che è esattamente il riquadro per
+ * cui la pagina esiste.
  */
 function useCrossInvalidation(): () => Promise<void> {
   const queryClient = useQueryClient();
@@ -176,6 +182,7 @@ function useCrossInvalidation(): () => Promise<void> {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
       queryClient.invalidateQueries({ queryKey: occurrenceKeys.all }),
+      queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
     ]);
   };
 }
