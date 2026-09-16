@@ -13,6 +13,7 @@ import { ExpensesPage } from '@/pages/ExpensesPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { PaymentMethodsPage } from '@/pages/PaymentMethodsPage';
 import { ProfileSettingsPage } from '@/pages/ProfileSettingsPage';
+import { ReportPage } from '@/pages/ReportPage';
 import { VendorsPage } from '@/pages/VendorsPage';
 
 /**
@@ -48,6 +49,7 @@ export function App() {
           <Route path="/spese" element={<ExpensesPage />} />
           <Route path="/spese/:id" element={<ExpenseDetailPage />} />
           <Route path="/scadenze" element={<DueDatesPage />} />
+          <Route path="/report" element={<ReportPage />} />
           <Route path="/clienti" element={<ClientsPage />} />
           <Route path="/fornitori" element={<VendorsPage />} />
           {/*

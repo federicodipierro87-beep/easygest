@@ -23,6 +23,7 @@ describe('intelaiatura delle pagine autenticate', () => {
   it('porta a tutte le sezioni', () => {
     const markup = html(<AppLayout />, '/');
 
+    expect(markup).toContain('href="/report"');
     expect(markup).toContain('href="/clienti"');
     expect(markup).toContain('href="/fornitori"');
     expect(markup).toContain('Esci');

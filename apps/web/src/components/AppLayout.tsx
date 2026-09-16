@@ -16,6 +16,9 @@ const SECTIONS = [
   // là per contratto, qui per data — ed è la seconda lettura, non un dettaglio
   // della prima.
   { to: '/scadenze', label: 'Scadenze' },
+  // Dopo le scadenze: sono le stesse righe lette una terza volta, sommate per
+  // periodo invece che elencate. Chi guarda i report ci arriva da lì.
+  { to: '/report', label: 'Report' },
   { to: '/clienti', label: 'Clienti' },
   { to: '/fornitori', label: 'Fornitori' },
   // Una voce sola per categorie e metodi di pagamento: si configurano una
