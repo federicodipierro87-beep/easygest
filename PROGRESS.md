@@ -91,6 +91,21 @@ un'email di conferma che segnali un refuso, e l'unico recupero sarebbe stato
 collegarsi al database. Vale per tutto ciò che tocca credenziali, e tornerà a
 valere il giorno in cui si aggiungerà il recupero della password.
 
+La Fase 5 è **aperta a metà** e la sua riga resta ⬜. Ci sono la dashboard, il
+riepilogo per periodo su `/report` e l'esportazione CSV del dettaglio; manca il
+PDF, che è l'ultima voce della riga. Le stesse occorrenze si leggono ormai in
+quattro modi — per contratto in `/spese`, per data in `/scadenze`, sommate per
+periodo in `/report`, e riga per riga nel file — e tutti e quattro partono dalla
+stessa `ReportRow`: è la ragione per cui `foldReport` e `ledgerToCsv` stanno nel
+medesimo file di `packages/shared`.
+
+Il PDF **non porterà una libreria**: sarà la stampa del browser. L'unico costo
+già pagato sono le classi `print:hidden` sulla barra dei comandi e
+`break-inside-avoid` sulle sezioni, più il periodo scritto in chiaro
+nell'intestazione perché un foglio uscito dalla stampante dica di quando parla.
+Sono tre classi e una riga di testo: se la decisione cambiasse, non c'è niente
+da smontare.
+
 ---
 
 ## Flusso di lavoro
@@ -999,6 +1014,115 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   `/impostazioni/profilo` si raggiunge comunque dal menù: è una scorciatoia, non
   l'unica via.
 
+### Report ed esportazione
+
+- **Il riepilogo scarta le saltate, il dettaglio no.** `foldReport` non conta
+  `SKIPPED` e `CANCELLED` — non sono costate niente — mentre
+  `GET /reports/ledger` non filtra nessuno stato, perché il file racconta cosa è
+  successo e il riepilogo cosa è costato. Sono due promesse diverse sulle stesse
+  righe, e vanno tenute insieme.
+- **Nel CSV la riga saltata c'è, ma le due colonne in valuta base sono vuote.**
+  È il modo in cui le due promesse stanno insieme: la scadenza resta nel foglio
+  col suo stato in italiano, e `Totale in EUR` e `Riaddebito in EUR` non
+  riportano una cifra che non è stata spesa. Sommare la colonna in Excel dà
+  allora **esattamente** il numero mostrato in pagina. Togliere la riga
+  farebbe sparire una decisione presa; riempirle farebbe divergere il file dallo
+  schermo di un importo qualunque, ed è il difetto che nessuno nota, perché
+  entrambi i numeri sembrano plausibili. Le colonne nella valuta originale non si
+  svuotano: sono documentali e non sono sommabili comunque, dato che mescolano
+  valute diverse.
+- **`IVA %` è un numero, `Cambio` è testo, e non è una svista.** I basis point
+  hanno la stessa scala dei centesimi, quindi `2200` passa da `csvAmount` e
+  diventa `22,00`: resta filtrabile e ordinabile, e non viene mai apostrofato
+  nemmeno se negativo. Il cambio resta invece la stringa con il punto e i dieci
+  decimali che sta in tabella. È un prezzo voluto: in Excel non è
+  moltiplicabile, e quindi **nessuno può ricalcolare il controvalore** ottenendo
+  un arrotondamento diverso da quello congelato sull'occorrenza.
+- **Il foglio non porta identificativi.** Niente `occurrenceId` né `expenseId`:
+  UUID che nessuno legge e che fanno sembrare tecnico un documento destinato al
+  commercialista. Prezzo dichiarato: il file non si riaggancia alle righe
+  dell'applicazione.
+- **Un dettaglio tagliato non produce un file, produce un rifiuto.** Oltre
+  `LEDGER_MAX_ROWS` il server risponde `truncated: true`, e il client si ferma
+  dicendo di restringere il periodo. Un avviso accanto a un download già partito
+  verrebbe letto dopo, o mai: il foglio sarebbe già aperto, sommato e mandato, e
+  mancherebbero delle righe senza che niente nel file lo dica.
+- **La composizione del CSV sta in `shared`, il tocco al DOM in
+  `lib/download.ts`.** Nessuna rotta di esportazione sull'API: il browser ha già
+  in mano le righe e comporre il testo è una funzione pura, cioè la parte
+  provabile. `download.ts` è tre righe di `Blob`, ancora e `revokeObjectURL`, e
+  non ha test perché non c'è niente da provare se non il browser — la suite gira
+  in `environment: 'node'`.
+- **Il periodo del report sta nell'indirizzo, i filtri degli elenchi no.** Sembra
+  una contraddizione con il debito «i filtri non stanno nell'indirizzo» e non lo
+  è: su un elenco il filtro è un modo di guardare, qui il periodo **è la
+  domanda**. `/report?from=…&to=…` si manda, si salva fra i preferiti e si
+  riapre a gennaio, e la stampa futura lo mette nel piè di pagina. Quel debito
+  chiede di portare i filtri nell'indirizzo **tutti insieme**, per non avere due
+  modi di leggere la barra: questo non ne è l'inizio a metà, è l'argomento della
+  rotta.
+- **Il periodo si scrive sempre con `replace: true` e si legge con un ritardo.**
+  Un `input type="date"` emette un `onChange` per ogni stato intermedio: senza
+  `replace` la cronologia si riempirebbe di una dozzina di voci per una data
+  digitata, e senza attesa partirebbe una richiesta per tasto — gli stati
+  intermedi sono date valide ma assurde (`0002-03-15`), che il server rifiuta con
+  un messaggio rosso. Il ritardo è **sulle due stringhe separatamente**, perché
+  `useDebouncedValue` confronta per identità e un `{ from, to }` costruito nel
+  rendering azzererebbe il timer a ogni giro senza convergere mai.
+- **`periodError` non riscrive le regole del periodo, chiama
+  `reportQuerySchema`.** I messaggi sono già in italiano e sono **gli stessi**
+  che tornerebbero dal server: riscriverli darebbe due formulazioni destinate a
+  divergere, e quella sbagliata sarebbe la prima che si legge. `enabled` spegne
+  poi la query, così un periodo impossibile non parte nemmeno.
+- **Il report non usa `placeholderData: previous`,** a differenza di ogni elenco.
+  Tenere a schermo i numeri del trimestre scorso sotto l'intestazione di questo è
+  precisamente «numeri veri attribuiti al periodo sbagliato»: su un elenco è un
+  lampeggio, su un report è una lettura sbagliata che dura un secondo e sembra
+  vera.
+- **L'esportazione passa da `queryClient.fetchQuery`, non da una query spenta.**
+  Il gesto è imperativo e ha quattro passi in fila — leggi, rifiuta se tagliato,
+  componi, tocca il DOM — e una promessa si gestisce con un `try/catch`. Con
+  `useQuery({ enabled: false })` fino a 5000 righe resterebbero appese al
+  componente, provocando un rendering per dati che servono un istante e
+  finiscono in un `Blob`. Trabocchetto: **`enabled` non vale per `fetchQuery`**,
+  quindi su un periodo non valido è il bottone a dover essere disattivato.
+- **I preset sono finestre di calendario, non mobili.** «Ultimi novanta giorni»
+  darebbe un numero che cambia ogni mattina e che non si confronta con quello di
+  ieri; il trimestre di calendario si confronta con il precedente e con quello
+  dell'anno scorso. L'anno in corso arriva al **31 dicembre e non a oggi**,
+  perché le `PLANNED` contano: è metà consuntivo e metà impegno preso, e chi
+  legge deve saperlo.
+- **Il periodo predefinito è l'anno in corso, non il mese.** Un report del solo
+  mese corrente avrebbe una serie mensile di una riga — una tabella senza
+  informazione — e il costo del mese è già in dashboard.
+- **`periodFromParams` non corregge mai in silenzio.** Mancano entrambi i
+  parametri: si apre sul default. Ne manca uno: default intero, perché mezzo
+  periodo è una domanda ambigua. Ci sono entrambi: si usa quello che c'è scritto
+  **anche se è spazzatura**, e a rifiutarlo pensa `periodError` con un messaggio.
+  Scivolare su un altro periodo mostrerebbe numeri veri attribuiti al periodo
+  sbagliato, che è il difetto esatto contro cui esiste lo schema.
+- **Le quote non promettono mai un totale del cento per cento,** e la pagina lo
+  dichiara. Tre gruppi da un terzo danno 99,99: da nessuna parte compare una
+  somma delle quote, perché sarebbe un numero da spiegare ogni volta.
+- **Un margine teorico negativo si mostra in rosso, non si nasconde.** Una spesa
+  non riaddebitata ha margine negativo, non assente, ed è precisamente la riga
+  che si va a cercare. Per la stessa ragione «Senza categoria», «Senza
+  fornitore» e «Non riaddebitata» sono etichette e non celle vuote, in pagina e
+  nel file: nasconderle farebbe tornare la somma delle righe e sparire una voce
+  di spesa.
+- **Le tre tabelle del report sono componenti locali non esportati.** `MonthTable`,
+  `BucketTable` — due usi, categorie e fornitori — e `ClientTable` stanno nello
+  stesso file della pagina: un file in `components/` per cose che nessun'altra
+  pagina userà sarebbe un'astrazione per un uso solo.
+- **Il mese si scrive dalla stringa `YYYY-MM`, senza costruire un `Date`.**
+  Stessa ragione di `formatDay`: a ovest di Greenwich un giorno di calendario
+  letto come istante indietreggia di uno, e qui arretrerebbe l'intero mese a
+  gennaio ogni 1° febbraio.
+- **Correggere una scadenza invalida anche i report.** `useCrossInvalidation`
+  tocca `reportKeys.all` insieme alle altre radici: senza, il vecchio totale
+  resterebbe a schermo e il vecchio dettaglio in cache, e da lì finirebbe tale e
+  quale nel file esportato.
+
 ### Infrastruttura locale
 
 - **Postgres sulla porta 55432**, volutamente alta e improbabile. La 5432 era
@@ -1229,14 +1353,13 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   del processo — cioè a ogni deploy, e in locale a ogni ricarica di `tsx watch`.
   Per un limite anti-forza-bruta su un'applicazione a un solo utente va bene;
   diventerebbe un problema con più repliche, dove servirebbe un Redis condiviso.
-- **Il bundle del frontend è un unico file da 633 kB (186 kB gzip)**, e Vite lo
-  segnala. È tutto in una volta perché non c'è ancora nessuno `React.lazy`: le
-  candidate naturali sono Recharts (Fase 5) e le pagine dietro il login, che chi
-  arriva alla schermata di accesso non deve scaricare. Da affrontare quando
-  entrerà la prima libreria pesante, non prima: dividere adesso sposterebbe
-  soltanto il peso. Le pagine delle impostazioni erano costate 26 kB in tutto,
-  icone comprese; le tre delle spese altri 46: la crescita resta proporzionata a
-  ciò che si aggiunge.
+- **Il bundle del frontend è un unico file**, e Vite lo segnala. È tutto in una
+  volta perché non c'è ancora nessuno `React.lazy`: la candidata naturale sono le
+  pagine dietro il login, che chi arriva alla schermata di accesso non deve
+  scaricare. Non è più Recharts: la Fase 5 ha fatto i report **senza grafici**,
+  quindi la prima libreria pesante che avrebbe forzato la divisione non arriverà.
+  La misura aggiornata e il criterio per decidere sono più sotto, nella nota sul
+  bundle da rimisurare a ogni fase.
 - **`testTimeout` e `hookTimeout` di Vitest sono alzati a 20 s.** Il primo
   sintomo è stato un test del frontend che passava da solo e scadeva a 5 s
   insieme agli altri: fa `vi.resetModules()` e reimporta l'intero grafo di React,
@@ -1264,6 +1387,22 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   Vale per tutte e quattro le anagrafiche, non solo per le nuove pagine: un clic
   fuori dal riquadro perde quel che si stava scrivendo. Da risolvere una volta
   per tutte nel componente condiviso, non finestra per finestra.
+- **`lib/download.ts` non ha test, e non può averli qui.** La suite gira in
+  `environment: 'node'`: non esistono `Blob`, `URL.createObjectURL` né un
+  documento a cui appendere l'ancora. Sono venti righe, ma dentro ci sono tre
+  trabocchetti che solo un browser rivelerebbe — l'ancora va appesa al documento
+  prima del `click()`, altrimenti Firefox lo ignora; `revokeObjectURL` va in un
+  `setTimeout(…, 0)`, perché revocare subito annulla il download e non revocare
+  mai tiene in memoria l'intera stringa finché vive la scheda; e serve un `Blob`
+  e non un `data:` URL, sia perché il BOM sopravvive come `EF BB BF` sia perché
+  su qualche migliaio di righe alcuni browser rifiutano l'indirizzo per
+  lunghezza. È il motivo per cui in quel file non c'è **nessuna** logica: tutto
+  ciò che si può sbagliare in silenzio sta in `ledgerToCsv`, che è provato.
+  Coprirlo davvero richiederebbe un secondo ambiente di test o un browser vero.
+- **Il clic sull'esportazione non è provato da nessuna parte.** Le due metà lo
+  sono — il rifiuto su `truncated` come funzione pura, la composizione del file
+  nei test di `shared` — ma la sequenza che le unisce, compreso il bottone
+  disattivato sul periodo non valido, è coperta solo dalla verifica a mano.
 - **I test delle pagine sono prove di accensione, non di comportamento.**
   `renderToString` verifica che l'albero si costruisca e che certe frasi ci
   siano; non clicca niente. Serve a intercettare le rotture strutturali — una
@@ -1300,7 +1439,10 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   costruita a fatica — stato, fornitore, finestra di scadenza — non si può
   mandare a nessuno né ritrovare col tasto «indietro». Da fare per tutti gli
   elenchi insieme, altrimenti si finisce con due modi diversi di leggere la barra
-  degli indirizzi.
+  degli indirizzi. **`/report` è l'unica pagina che li legge già**, ed è voluto
+  per la ragione scritta più sopra: lì il periodo non è un filtro, è l'argomento
+  della rotta. Resta però vero che da fuori si vedono due convenzioni, e la
+  seconda sparirà solo quando gli elenchi si adegueranno.
 - **Il totale di `/scadenze` è quello della pagina, non del filtro.** Il client ha
   in mano venti righe su duecento: sommare tutto richiederebbe un endpoint che lo
   faccia. Per ora la pagina lo dichiara («In questa pagina: …»), perché un numero
@@ -1316,10 +1458,14 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
 - **Il bundle va rimisurato a ogni fase.** Le tre pagine delle spese l'hanno
   portato da 587 a 633 kB (186 kB gzip); la campanella, il popover e la pagina
   degli avvisi da 633 a 655 kB (191 kB gzip), misurati, contro i ~660 stimati;
-  la pagina del profilo da 655 a **660 kB (192 kB gzip)**, contro i +4 kB
-  stimati, senza nessuna dipendenza né primitiva shadcn nuova. La crescita resta
-  proporzionata, ma oltre i 700 kB conviene anticipare il primo `React.lazy`
-  invece di aspettare Recharts.
+  la pagina del profilo da 655 a 660 kB (192 kB gzip), contro i +4 kB
+  stimati, senza nessuna dipendenza né primitiva shadcn nuova; la dashboard e il
+  report da 660 a **674 kB (196 kB gzip)**, due pagine e nessuna dipendenza
+  nuova. La crescita resta proporzionata, ma **i 700 kB sono vicini**: il primo
+  `React.lazy` va anticipato alla prossima pagina, e la sua candidata naturale
+  non è più Recharts — che la Fase 5 ha deciso di non introdurre — ma tutto
+  ciò che sta dietro il login, che chi arriva alla schermata di accesso non deve
+  scaricare.
 - **Un'email fallita non viene mai ritentata.** La riga `ReminderLog` resta con
   `succeeded = false` e il giro successivo la salta, perché la chiave esiste già.
   È voluto — è la scelta che garantisce «al massimo una volta» — ma significa che
