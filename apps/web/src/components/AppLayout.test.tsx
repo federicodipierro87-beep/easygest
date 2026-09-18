@@ -48,4 +48,12 @@ describe('intelaiatura delle pagine autenticate', () => {
 
     expect(active).toHaveLength(1);
   });
+
+  it('l’intelaiatura non finisce sulla carta', () => {
+    // Su `/report` e non su `/`, così la prova che conta gli `aria-current`
+    // resta indipendente da questa.
+    const markup = html(<AppLayout />, '/report');
+
+    expect(markup).toMatch(/<header[^>]*print:hidden/);
+  });
 });

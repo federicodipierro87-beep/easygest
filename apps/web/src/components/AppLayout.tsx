@@ -42,7 +42,11 @@ export function AppLayout() {
 
   return (
     <div className="min-h-dvh">
-      <header className="bg-background sticky top-0 z-10 border-b">
+      {/* `print:hidden` sulla classe e **non** un `header { display: none }` nel
+          blocco di stampa: anche il titolo di `/report` è un `<header>`, e porta
+          il periodo — cioè l'unica cosa che rende un foglio leggibile da solo.
+          Un selettore globale lo cancellerebbe insieme a questo. */}
+      <header className="bg-background sticky top-0 z-10 border-b print:hidden">
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-6 px-6">
           <span className="font-semibold tracking-tight">EasyGest</span>
 

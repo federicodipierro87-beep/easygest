@@ -139,3 +139,73 @@ html {
     @apply font-sans;
   }
 }
+
+/**
+ * Il foglio di stampa, che è anche il PDF: `Ctrl+P` e basta, nessuna libreria.
+ *
+ * **Fuori da ogni `@layer`, e non è un dettaglio.** `@import 'tailwindcss'`
+ * dichiara `@layer theme, base, components, utilities`: una regola non
+ * livellata batte qualunque regola livellata a prescindere dalla specificità.
+ * È ciò che rende `main { padding: 0 }` sicuro qui e incerto come `print:p-0`.
+ *
+ * La regola pratica su dove vive una regola di stampa: un `print:`
+ * sull'elemento quando l'elemento è tuo e la proprietà è libera; questo blocco
+ * negli altri tre casi, cioè quando l'elemento non esiste (`@page`), quando il
+ * selettore appartiene a shadcn (`[data-slot='…']`, file che la CLI rigenera),
+ * o quando la regola deve battere una utility già presente sullo stesso
+ * elemento.
+ *
+ * Niente `print-color-adjust: exact`: gli sfondi spenti risparmiano inchiostro,
+ * e qui il significato sta nei testi e nei bordi.
+ *
+ * **Non ha una sola prova**: la suite gira in `environment: 'node'`, senza
+ * CSSOM né impaginazione. È verificato solo dal browser, e solo su Chrome.
+ */
+@media print {
+  /**
+   * Il margine e **non** `size: A4`: dichiarare il formato toglie una scelta
+   * senza aggiungere un'informazione, e su una stampante caricata a Letter
+   * diventa un ridimensionamento che dal dialogo non si corregge.
+   *
+   * 14 mm e non 20: 210 − 28 = 182 mm ≈ 688 px, cioè **sopra il breakpoint
+   * `sm`** (640 px), che è ciò che tiene le schede del riepilogo su due colonne
+   * invece di impilarle. È un numero che sembra estetico e non lo è.
+   */
+  @page {
+    margin: 14mm;
+  }
+
+  /* `px-6 py-8` si sommerebbe al margine qui sopra, e il margine vero sarebbe
+     la somma di due numeri scritti in due file. */
+  main {
+    padding: 0;
+  }
+
+  /**
+   * La regola che salva delle righe.
+   *
+   * shadcn avvolge ogni tabella in `overflow-x-auto`. Sulla carta è un box di
+   * scorrimento, cioè indivisibile: il browser stampa quello che ci sta e il
+   * resto **non c'è** — non tagliato, sparito. Chi legge somma una colonna
+   * incompleta senza accorgersene, che è il difetto per cui esiste
+   * `exportRefusal`. Come conseguenza non ovvia, riabilita anche la ripetizione
+   * del `<thead>` su ogni pagina, che solo quel contenitore impediva.
+   */
+  [data-slot='table-container'] {
+    overflow: visible;
+  }
+
+  /**
+   * Tolto lo scorrimento, una tabella larga non scorre più: esce dal foglio, e
+   * ciò che esce non si stampa. Le celle di shadcn sono tutte
+   * `whitespace-nowrap`, e si rilassa **solo la prima colonna**, l'unica che
+   * contiene parole; le altre contengono numeri, e un `1.234,56 €` spezzato è
+   * illeggibile. Rilassarle tutte funzionerebbe finché `Intl.NumberFormat`
+   * mette uno spazio unificatore prima del simbolo: è vero oggi in it-IT, ma è
+   * una promessa di CLDR, non nostra.
+   */
+  [data-slot='table-head']:first-child,
+  [data-slot='table-cell']:first-child {
+    white-space: normal;
+  }
+}
