@@ -191,9 +191,22 @@ function ClientTable({ buckets, currency }: { buckets: ReportClientBucket[]; cur
   );
 }
 
+/**
+ * **Niente `break-inside-avoid` qui**, mentre le schede del riepilogo ce l'hanno.
+ *
+ * Su tre anni queste sezioni sono più alte di una pagina, e un blocco
+ * indivisibile più alto della pagina Chrome lo spezza comunque — nessun dato si
+ * perde — ma prima lo spinge alla pagina dopo. Misurato su dati veri: sei
+ * pagine con 167, 116, 114, 85 e 163 mm di bianco in fondo, cioè più di due
+ * facciate buttate perché ogni tabella cominciava da capo.
+ *
+ * La proprietà resta sulle tre schede del riepilogo, che sono alte cinque righe
+ * e che spezzate a metà non direbbero più niente: è esattamente il caso per cui
+ * esiste.
+ */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="break-inside-avoid rounded-xl border">
+    <section className="rounded-xl border">
       <h2 className="border-b px-5 py-3 text-sm font-medium">{title}</h2>
       {children}
     </section>
