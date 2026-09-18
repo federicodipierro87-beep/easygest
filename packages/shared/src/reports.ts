@@ -462,12 +462,23 @@ export function ledgerToCsv(rows: readonly ReportRow[], options: { baseCurrency:
 }
 
 /**
- * `easygest-report-2027-01-01_2027-03-31.csv`.
+ * `easygest-report-2027-01-01_2027-03-31`, senza estensione.
  *
  * Date ISO perché nella cartella dei download si ordinano da sole.
  * L'underscore fra le due perché un terzo trattino renderebbe ambiguo dove
  * finisce la prima data e comincia la seconda.
+ *
+ * Sta separato dall'estensione perché lo stesso report esce ormai per due
+ * strade — il file e il foglio stampato — e deve rispondere allo stesso nome:
+ * in una cartella di download il CSV e il PDF di uno stesso periodo si trovano
+ * l'uno accanto all'altro. Duplicare il modello nella pagina lo farebbe
+ * divergere al primo ritocco.
  */
+export function reportFileStem(from: string, to: string): string {
+  return `easygest-report-${from}_${to}`;
+}
+
+/** `easygest-report-2027-01-01_2027-03-31.csv`. */
 export function ledgerFileName(from: string, to: string): string {
-  return `easygest-report-${from}_${to}.csv`;
+  return `${reportFileStem(from, to)}.csv`;
 }

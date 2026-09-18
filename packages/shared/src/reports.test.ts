@@ -7,6 +7,7 @@ import {
   ledgerCsvHeaders,
   ledgerFileName,
   ledgerToCsv,
+  reportFileStem,
   reportQuerySchema,
 } from './reports';
 import { parseIsoDate } from './recurrence';
@@ -454,6 +455,15 @@ describe('dettaglio in CSV', () => {
     // la prima data.
     expect(ledgerFileName('2027-01-01', '2027-03-31')).toBe(
       'easygest-report-2027-01-01_2027-03-31.csv',
+    );
+  });
+
+  it('il nome del CSV è il nome del report più l’estensione', () => {
+    // Scritto come uguaglianza fra le due funzioni e non ripetendo la stringa a
+    // mano: il foglio stampato e il file devono rispondere allo stesso nome, e
+    // questa è la prova che non possono divergere.
+    expect(ledgerFileName('2027-01-01', '2027-03-31')).toBe(
+      `${reportFileStem('2027-01-01', '2027-03-31')}.csv`,
     );
   });
 
