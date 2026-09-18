@@ -15,7 +15,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | 2    | CRUD spese, motore ricorrenze, generazione occorrenze, test         | ✅ Completata |
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ✅ Completata |
 | 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ✅ Completata |
-| 5    | Dashboard, report, export CSV e PDF                                 | ⬜ Da fare    |
+| 5    | Dashboard, report, export CSV e PDF                                 | ✅ Completata |
 | 6    | Previsioni e simulatore what-if                                     | ⬜ Da fare    |
 | 7    | Archivio documenti: upload R2, ricerca full-text, export ZIP        | ⬜ Da fare    |
 | 8    | Rifinitura, documentazione finale, hardening                        | ⬜ Da fare    |
@@ -91,20 +91,21 @@ un'email di conferma che segnali un refuso, e l'unico recupero sarebbe stato
 collegarsi al database. Vale per tutto ciò che tocca credenziali, e tornerà a
 valere il giorno in cui si aggiungerà il recupero della password.
 
-La Fase 5 è **aperta a metà** e la sua riga resta ⬜. Ci sono la dashboard, il
-riepilogo per periodo su `/report` e l'esportazione CSV del dettaglio; manca il
-PDF, che è l'ultima voce della riga. Le stesse occorrenze si leggono ormai in
-quattro modi — per contratto in `/spese`, per data in `/scadenze`, sommate per
-periodo in `/report`, e riga per riga nel file — e tutti e quattro partono dalla
-stessa `ReportRow`: è la ragione per cui `foldReport` e `ledgerToCsv` stanno nel
-medesimo file di `packages/shared`.
+La Fase 5 è chiusa: dashboard, riepilogo per periodo su `/report`, esportazione
+CSV del dettaglio e PDF. Le stesse occorrenze si leggono ormai in cinque modi —
+per contratto in `/spese`, per data in `/scadenze`, sommate per periodo in
+`/report`, riga per riga nel file e impaginate sul foglio — e tutti partono
+dalla stessa `ReportRow`: è la ragione per cui `foldReport` e `ledgerToCsv`
+stanno nel medesimo file di `packages/shared`.
 
-Il PDF **non porterà una libreria**: sarà la stampa del browser. L'unico costo
-già pagato sono le classi `print:hidden` sulla barra dei comandi e
-`break-inside-avoid` sulle sezioni, più il periodo scritto in chiaro
-nell'intestazione perché un foglio uscito dalla stampante dica di quando parla.
-Sono tre classi e una riga di testo: se la decisione cambiasse, non c'è niente
-da smontare.
+Il PDF **non ha portato una libreria**: è la stampa del browser. Nessun secondo
+motore di impaginazione da tenere allineato a quello che si vede a schermo, e
+nessuna dipendenza nuova: tutto sta in un blocco `@media print` in `index.css`,
+un bottone «Stampa» su `/report` e un timbro con la data. La verifica è stata
+fatta col PDF vero, generato via `Page.printToPDF` da Chrome headless su tre
+anni di dati di `seed:demo`, e ha cambiato una decisione presa in anticipo — il
+`break-inside-avoid` sulle sezioni delle tabelle, che sprecava due facciate.
+Dettagli, motivazioni e limiti noti sono più sotto, in «Report ed esportazione».
 
 ---
 
@@ -1136,6 +1137,100 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   tocca `reportKeys.all` insieme alle altre radici: senza, il vecchio totale
   resterebbe a schermo e il vecchio dettaglio in cache, e da lì finirebbe tale e
   quale nel file esportato.
+- **Il PDF è `Ctrl+P`.** Nessuna libreria: una seconda impaginazione andrebbe
+  tenuta allineata a quella che si vede a schermo, e le due divergerebbero al
+  primo ritocco del CSS. Tutto sta in un blocco `@media print` in `index.css`,
+  un bottone e un timbro.
+- **Il blocco `@media print` sta fuori da ogni `@layer`, e non è un dettaglio.**
+  `@import 'tailwindcss'` dichiara `@layer theme, base, components, utilities`,
+  e una regola **non livellata** batte ogni regola livellata a prescindere dalla
+  specificità. È ciò che rende `main { padding: 0 }` sicuro lì e incerto come
+  `print:p-0` sull'elemento.
+- **La regola pratica su dove vive una regola di stampa**: un `print:`
+  sull'elemento quando l'elemento è tuo e la proprietà è libera; il blocco in
+  `index.css` negli altri tre casi, cioè quando l'elemento non esiste (`@page`),
+  quando il selettore appartiene a shadcn (`[data-slot='…']`, file che la CLI
+  rigenera), o quando la regola deve battere una utility già presente sullo
+  stesso elemento. Per questo l'intestazione dell'applicazione esce dalla carta
+  con `print:hidden` sulla classe: un `header { display: none }` globale
+  cancellerebbe anche il titolo di `/report`, che è un `<header>` e porta il
+  periodo.
+- **`@page { margin: 14mm }`, e non `size: A4`.** Dichiarare il formato toglie
+  una scelta senza aggiungere un'informazione, e su una stampante caricata a
+  Letter diventa un ridimensionamento che dal dialogo non si corregge. I 14 mm
+  non sono estetica: 210 − 28 = 182 mm ≈ 688 px, cioè **sopra il breakpoint
+  `sm`** (640 px), che è ciò che tiene le tre schede del riepilogo su due colonne
+  invece di impilarle. Con margini più larghi scenderebbero sotto i 640 px. Nota
+  collegata: `xl:` (1280 px) non scatta mai in stampa, quindi sono al massimo due
+  per riga.
+- **`overflow: visible` sui contenitori delle tabelle è la riga che salva delle
+  righe.** shadcn avvolge ogni tabella in `overflow-x-auto`; sulla carta un box
+  di scorrimento è indivisibile, e il browser stampa quello che ci sta mentre il
+  resto **non c'è** — non tagliato, sparito. È lo stesso difetto per cui esiste
+  `exportRefusal`: chi legge somma una colonna incompleta senza accorgersene.
+  Come conseguenza non ovvia, riabilita anche la ripetizione del `<thead>` in
+  cima a ogni pagina, che solo quel contenitore impediva. Tolto lo scorrimento si
+  rilassa il `whitespace-nowrap` sulla **sola prima colonna**, l'unica che
+  contiene parole: le altre contengono numeri, e un `1.234,56 €` spezzato è
+  illeggibile.
+- **Niente `print-color-adjust: exact`**: gli sfondi spenti risparmiano
+  inchiostro, e qui il significato sta nei testi e nei bordi. Se su carta vera i
+  bordi a `oklch(0.922 0 0)` risultassero invisibili, il rimedio è una riga sola
+  e senza lotte di specificità, perché ogni bordo passa dalla variabile:
+  `@media print { :root { --border: oklch(0.6 0 0) } }`.
+- **`break-inside-avoid` è rimasto sulle tre schede del riepilogo e tolto dalle
+  quattro sezioni delle tabelle**, ed è la decisione che la verifica ha
+  cambiato. Su una sezione più alta di una pagina la proprietà non tiene insieme
+  niente — Chrome spezza comunque, nessun dato si perde — ma prima spinge il
+  blocco alla pagina dopo: misurato sul PDF di tre anni, sei pagine con 167, 116,
+  114, 85 e 163 mm di bianco in fondo, cioè più di due facciate buttate perché
+  ogni tabella ricominciava da capo. Senza, sono quattro pagine piene e le stesse
+  righe. Sulle schede, alte cinque righe, la proprietà resta: spezzate a metà non
+  direbbero più niente, ed è il caso per cui esiste.
+- **Il foglio porta un timbro, `EasyGest · generato il 18/09/2026`.** Le
+  `PLANNED` contano nei totali, quindi due stampe dello stesso periodo a un mese
+  di distanza portano numeri diversi: senza la data, sulla carta, niente le
+  distingue. Ed è anche l'unico punto in cui resta scritto «EasyGest», dato che
+  l'intestazione dell'applicazione è `print:hidden`. È **una sola espressione**
+  e non testo più interpolazione, perché fra due nodi di testo adiacenti
+  `renderToString` infila un `<!-- -->` e la prova non potrebbe più cercare la
+  frase intera.
+- **Si stampa a conteggio zero, mentre non si esporta**, e non è un'incoerenza:
+  un CSV di sole intestazioni aperto in Excel è indistinguibile da
+  un'esportazione andata storta, mentre un foglio con periodo, timbro e «Nessuna
+  scadenza in questo periodo» è un documento vero, ed è quello che si consegna
+  per dire che in quel trimestre non c'era niente. La condizione **specchia i
+  rami del JSX** e non guarda `data !== undefined`: su un aggiornamento fallito
+  TanStack tiene in cache i dati precedenti mentre `isError` è vera e a schermo
+  c'è il messaggio rosso, e si stamperebbe un errore.
+- **Il bottone «Stampa» sta solo su `/report`.** Le regole di stampa sono
+  globali e ogni pagina ne beneficia con `Ctrl+P`, ma un bottone in dashboard
+  direbbe che quel foglio è un documento da consegnare, mentre è un cruscotto.
+- **`printWithTitle` scambia il titolo prima di `print()` e lo rimette con
+  `afterprint`.** Chrome compone il nome del PDF dal `document.title`, fisso a
+  `EasyGest` in `index.html`. Quando lo legga per l'anteprima non è documentato,
+  e prima della chiamata è l'unico istante in cui si è certi che sia già quello
+  giusto; rimetterlo dopo il ritorno di `print()` funzionerebbe solo dove
+  `print()` blocca, che su Chrome è vero e altrove no. L'ascoltatore si toglie da
+  sé, o una seconda stampa ne lascerebbe due. Il nome viene da `reportFileStem`,
+  lo stesso di `ledgerFileName` meno l'estensione: CSV e PDF dello stesso periodo
+  si trovano vicini nella cartella dei download.
+- **Limiti noti della stampa**, che qui sono più del solito:
+  - l'intero blocco `@media print` e `lib/print.ts` **non hanno una sola prova**,
+    perché la suite gira in `environment: 'node'`, senza CSSOM né impaginazione:
+    sono verificati solo dal browser. Ciò che si può sbagliare in silenzio sta
+    altrove, dove è provabile;
+  - **`Ctrl+P` diretto salva `EasyGest.pdf`**: il nome col periodo lo dà solo il
+    bottone, ed è una ragione in più perché il bottone esista oltre alla
+    scopribilità;
+  - **numeri di pagina e URL nel piè di pagina sono una casella del dialogo di
+    Chrome**, non una nostra regola: `@page` non ha mai avuto i margin box in
+    Chrome, e «Pagina 1 di 3» non è ottenibile senza una libreria;
+  - **il dialogo di stampa vince su di noi**: «Margini» diverso da «Predefiniti»
+    ignora `@page` e «Adatta alla pagina» riscala tutto. Il CSS è un valore
+    predefinito, non una garanzia;
+  - **validato solo su Chrome**. Firefox e Safari hanno motori di frammentazione
+    diversi e sono fuori perimetro.
 
 ### Infrastruttura locale
 
