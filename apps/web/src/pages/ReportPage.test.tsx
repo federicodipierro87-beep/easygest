@@ -155,13 +155,28 @@ describe('report di un periodo con righe', () => {
     expect(markup).toContain('Non riaddebitata');
   });
 
-  it('a righe presenti si può esportare', () => {
+  it('il foglio porta il nome dell’applicazione e la data in cui è uscito', () => {
+    // La forma e non il giorno: `todayIso()` legge l'orologio durante il
+    // rendering. Il timbro esiste perché le `PLANNED` contano nei totali — due
+    // stampe dello stesso periodo a un mese di distanza portano numeri diversi
+    // — e perché l'intestazione dell'applicazione, che è `print:hidden`, era
+    // l'unico altro punto in cui compariva la parola «EasyGest».
+    const markup = html(at(PERIOD), withSummary(SUMMARY));
+
+    expect(markup).toMatch(/EasyGest · generato il \d{2}\/\d{2}\/\d{4}/);
+    // Unica volta in cui si guarda una classe, perché qui la classe *è* il
+    // comportamento: a schermo il timbro non c'è, sulla carta sì.
+    expect(markup).toContain('print:block');
+  });
+
+  it('a righe presenti si può sia esportare sia stampare', () => {
     // L'attributo, non la classe: le classi di Tailwind contengono tutte una
     // variante `disabled:`, e cercare la sola parola troverebbe sempre sé
     // stessa su qualunque bottone.
     const markup = html(at(PERIOD), withSummary(SUMMARY));
 
     expect(markup).toContain('Esporta CSV');
+    expect(markup).toContain('Stampa');
     expect(markup).not.toContain('disabled=""');
   });
 });
@@ -174,13 +189,24 @@ describe('report di un periodo vuoto', () => {
     expect(markup).not.toContain('Andamento mensile');
   });
 
-  it('a conteggio zero non si può esportare', () => {
-    // Il file avrebbe solo righe senza costo — saltate e annullate — e non è
-    // quello che si vuole scaricare.
+  it('a conteggio zero si stampa ma non si esporta', () => {
+    /**
+     * Il file avrebbe solo righe senza costo — saltate e annullate — e un CSV
+     * di sole intestazioni aperto in Excel è indistinguibile da
+     * un'esportazione andata storta. Un foglio con periodo, timbro e «Nessuna
+     * scadenza in questo periodo» è invece un documento vero, ed è quello che
+     * si consegna per dire che in quel trimestre non c'era niente.
+     *
+     * Si contano le occorrenze come in `AppLayout.test.tsx`: con due bottoni,
+     * un `toContain` passerebbe anche se fossero spenti entrambi, cioè
+     * precisamente il difetto che questa prova esclude.
+     */
     const markup = html(at(PERIOD), withSummary(EMPTY_SUMMARY));
+    const off = [...markup.matchAll(/disabled=""/g)];
 
     expect(markup).toContain('Esporta CSV');
-    expect(markup).toContain('disabled=""');
+    expect(markup).toContain('Stampa');
+    expect(off).toHaveLength(1);
   });
 
   it('non lascia trapelare né NaN né undefined', () => {
@@ -206,5 +232,15 @@ describe('periodo che il server rifiuterebbe', () => {
     const markup = html(at({ from: '2020-01-01', to: '2027-01-01' }));
 
     expect(markup).toContain('01/01/2020');
+  });
+
+  it('non si stampa un messaggio d’errore', () => {
+    // Su un periodo rifiutato a schermo c'è il messaggio rosso e nient'altro:
+    // un foglio con dentro quello non è un documento, e i due bottoni sono
+    // spenti entrambi.
+    const markup = html(at({ from: '2020-01-01', to: '2027-01-01' }));
+    const off = [...markup.matchAll(/disabled=""/g)];
+
+    expect(off).toHaveLength(2);
   });
 });

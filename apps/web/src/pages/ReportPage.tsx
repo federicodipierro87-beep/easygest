@@ -2,6 +2,7 @@ import {
   formatBasisPoints,
   ledgerFileName,
   ledgerToCsv,
+  reportFileStem,
   type ReportBucket,
   type ReportClientBucket,
   type ReportMonthBucket,
@@ -24,7 +25,8 @@ import {
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { ApiError } from '@/lib/api';
 import { downloadCsv } from '@/lib/download';
-import { formatDay, formatMoney } from '@/lib/format';
+import { formatDay, formatMoney, todayIso } from '@/lib/format';
+import { printWithTitle } from '@/lib/print';
 import {
   PERIOD_PRESETS,
   activePreset,
@@ -47,8 +49,9 @@ import {
  * **Il periodo sta nell'URL, non in un `useState`.** Su un elenco il filtro è
  * un modo di guardare; qui il periodo *è* la domanda: `/report?from=…&to=…` è
  * quello che si manda al commercialista, si mette nei preferiti e si riapre a
- * gennaio. La stampa futura mette l'indirizzo nel piè di pagina, e con uno
- * stato locale il foglio non direbbe di quale periodo parla.
+ * gennaio. Chi stampa può chiedere a Chrome di mettere l'indirizzo nel piè di
+ * pagina — è una casella del suo dialogo, non una cosa che facciamo noi — e con
+ * uno stato locale quella riga non direbbe di quale periodo parla il foglio.
  *
  * Non è l'inizio a metà della migrazione dichiarata in `DashboardPage`: quel
  * debito riguarda i **filtri degli elenchi**, che vanno portati nella query
@@ -56,10 +59,14 @@ import {
  * rotta. Il prezzo è che per un po' questa pagina avrà una convenzione diversa
  * dalle altre.
  *
- * Il PDF è la stampa del browser e arriverà dopo. Qui si paga solo il terreno:
- * `print:hidden` sulla sola barra dei comandi, il periodo scritto in chiaro
- * nell'intestazione, e `break-inside-avoid` sulle sezioni perché una tabella
- * non si spezzi a metà fra due pagine.
+ * **Il PDF è la stampa del browser**, nessuna libreria: `print:hidden` sulla
+ * barra dei comandi, il periodo scritto in chiaro nell'intestazione,
+ * `break-inside-avoid` sulle sezioni perché una tabella non si spezzi a metà
+ * fra due pagine, e il resto — margine di pagina, tabelle che non restano
+ * dentro il loro box di scorrimento — nel blocco `@media print` di `index.css`.
+ * Il bottone «Stampa» sta solo qui e non in dashboard: le regole di stampa sono
+ * globali e ogni pagina ne beneficia con `Ctrl+P`, ma un bottone direbbe che
+ * quel foglio è un documento da consegnare, mentre è un cruscotto.
  */
 
 /** `2027-03` → `03/2027`, senza costruire un `Date`. */
@@ -280,11 +287,44 @@ export function ReportPage() {
   const empty = data !== undefined && data.count === 0;
   const canExport = !exporting && invalid === null && data !== undefined && data.count > 0;
 
+  /**
+   * **Si stampa anche a conteggio zero, mentre non si esporta**, e non è
+   * un'incoerenza: un CSV di sole intestazioni aperto in Excel è
+   * indistinguibile da un'esportazione andata storta, mentre un foglio con
+   * periodo, timbro e «Nessuna scadenza in questo periodo» è un documento vero,
+   * ed è quello che si consegna per dire che in quel trimestre non c'era nulla.
+   *
+   * La condizione **specchia i rami del JSX** e non usa `data !== undefined`:
+   * su un aggiornamento fallito TanStack tiene in cache i dati precedenti
+   * mentre `isError` è vera e a schermo c'è il messaggio rosso — si stamperebbe
+   * un errore. Non si accoppia a `exporting`: sono due gesti indipendenti.
+   */
+  const canPrint = invalid === null && !summary.isPending && !summary.isError;
+
   return (
     <div className="flex flex-col gap-6">
       {/* Il periodo in chiaro **non** è `print:hidden`: è ciò che rende un
           foglio stampato leggibile da solo, mesi dopo e fuori dal browser. */}
       <header className="flex flex-wrap items-baseline justify-between gap-2">
+        {/*
+          Il timbro, che si vede solo sulla carta.
+
+          Le `PLANNED` contano nei totali, quindi due stampe dello stesso
+          periodo a un mese di distanza portano numeri diversi: senza la data,
+          su un foglio, niente le distingue. Ed è anche l'unico punto in cui
+          resta scritto «EasyGest», dato che l'intestazione dell'applicazione è
+          `print:hidden`.
+
+          Primo figlio e con `w-full`, perché il `flex-wrap` gli dia una riga
+          sua sopra il titolo: come terzo elemento della riga, `justify-between`
+          lo sparpaglierebbe. **Una sola espressione e non testo più
+          interpolazione**: fra due nodi di testo adiacenti `renderToString`
+          infila un `<!-- -->`, e la prova non potrebbe più cercare la frase
+          intera.
+        */}
+        <p className="text-muted-foreground hidden w-full text-xs print:block">
+          {`EasyGest · generato il ${formatDay(todayIso())}`}
+        </p>
         <h1 className="text-2xl font-semibold tracking-tight">Report</h1>
         <p className="text-muted-foreground text-sm">
           Dal {formatDay(shown.from)} al {formatDay(shown.to)}
@@ -335,8 +375,24 @@ export function ReportPage() {
             />
           </div>
 
+          {/* `ml-auto` sta qui e non su «Esporta CSV»: i due restano ancorati a
+              destra e il bottone dell'esportazione non si sposta di un pixel.
+              `outline` perché due bottoni pieni affiancati sono due richiami
+              uguali fra cui l'occhio non sceglie, ed è già il vocabolario della
+              barra; nessuna icona, perché «Esporta CSV» non ne ha. */}
           <Button
             className="ml-auto"
+            variant="outline"
+            size="sm"
+            disabled={!canPrint}
+            onClick={() => {
+              printWithTitle(reportFileStem(asked.from, asked.to));
+            }}
+          >
+            Stampa
+          </Button>
+
+          <Button
             size="sm"
             disabled={!canExport}
             onClick={() => {
