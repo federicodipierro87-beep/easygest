@@ -14,4 +14,5 @@ export * from './reminders';
 export * from './reports';
 export * from './resources';
 export * from './settings';
+export * from './taxes';
 export * from './vendors';
