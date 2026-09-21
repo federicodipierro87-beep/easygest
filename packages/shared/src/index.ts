@@ -5,6 +5,7 @@ export * from './csv';
 export * from './dashboard';
 export * from './expenses';
 export * from './fiscal';
+export * from './forecast';
 export * from './jobs';
 export * from './money';
 export * from './notifications';
