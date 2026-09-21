@@ -6,9 +6,14 @@ import { isValidTimeZone } from './recurrence';
  * Le preferenze dell'utente: fisco, valuta, fuso, avvisi.
  *
  * Sono una riga sola per utente, ma non un unico oggetto modificabile in blocco.
- * `GET` restituisce tutto — alla Fase 6 servirà il blocco fiscale intero per
- * calcolare le imposte — mentre `PATCH` accetta solo i campi degli avvisi, che
- * sono gli unici che questa fase sa salvare senza rompere nulla a valle.
+ * `GET` restituisce tutto; `PATCH` accetta gli avvisi e il blocco fiscale —
+ * regime e tre aliquote — che sono quelli che le previsioni leggono.
+ *
+ * Fuori restano `baseCurrency`, per la ragione scritta sotto, e
+ * `defaultVatRateBp`, che oggi non lo legge nessuno: il form della spesa ha il
+ * 22 % scritto a mano. Renderlo modificabile creerebbe un'impostazione che si
+ * salva e non fa niente, che è peggio di un'impostazione che non c'è. Entra
+ * quando qualcuno la legge.
  */
 
 export const taxRegimeSchema = z.enum(['FORFETTARIO', 'ORDINARIO']);
@@ -93,11 +98,25 @@ export const digestDayOfWeekSchema = z
   .max(7, 'Giorno non valido');
 
 /**
+ * Un'aliquota in basis point, da 0 a 100 %.
+ *
+ * Il tetto è il 100 % per tutte e tre, coefficiente compreso: un coefficiente
+ * di redditività del 100 % esiste — è l'attività senza costi forfettizzati — e
+ * uno oltre no, perché l'imponibile non può superare il fatturato.
+ */
+const rateSchema = z
+  .number()
+  .int('L’aliquota va espressa in basis point interi')
+  .min(0, 'Un’aliquota negativa non esiste')
+  .max(10_000, 'Un’aliquota oltre il 100% non esiste');
+
+/**
  * Cosa si può cambiare.
  *
- * `strictObject` e non `object`: un campo scritto male — `digestDay` invece di
- * `digestDayOfWeek` — verrebbe ignorato in silenzio, e l'utente vedrebbe un
- * salvataggio riuscito che non ha salvato niente.
+ * `strictObject` e non `object`: un campo scritto male — `taxRegim` invece di
+ * `taxRegime`, `digestDay` invece di `digestDayOfWeek` — verrebbe ignorato in
+ * silenzio, e l'utente vedrebbe un salvataggio riuscito che non ha salvato
+ * niente.
  *
  * Il tetto dei preavvisi di disdetta è 730 e non 365 per coerenza con
  * `cancellationNoticeDays` sulla spesa: se si può registrare un contratto con
@@ -105,6 +124,10 @@ export const digestDayOfWeekSchema = z
  */
 export const settingsPatchSchema = z
   .strictObject({
+    taxRegime: taxRegimeSchema,
+    substituteTaxRateBp: rateSchema,
+    profitabilityCoefficientBp: rateSchema,
+    inpsRateBp: rateSchema,
     timezone: timezoneSchema,
     reminderDaysBefore: daysBeforeSchema(365),
     cancellationReminderDaysBefore: daysBeforeSchema(730),

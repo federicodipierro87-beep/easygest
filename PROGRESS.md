@@ -560,8 +560,9 @@ occurrences, paymentMethods }` e restituisce `PlannedReminder[]`. Le query e la
 - **`PATCH /settings` non accetta `baseCurrency`.** I cambi sono congelati sulle
   occorrenze nel momento in cui nascono: cambiare la valuta base a metà strada
   renderebbe incomparabili tutti i `baseGrossCents` già scritti, senza che niente
-  lo segnali. `GET` invece restituisce tutta la riga, perché alla Fase 6 serve il
-  regime fiscale.
+  lo segnali. `GET` invece restituisce tutta la riga, regime fiscale compreso.
+  _(Alla Fase 6 il blocco fiscale — regime e tre aliquote — è entrato anche in
+  `PATCH`. `baseCurrency` e `defaultVatRateBp` restano fuori.)_
 - **`upsert` e non `update` sulle impostazioni**, così un utente senza riga si
   autoripara invece di ricevere 500 a ogni chiamata.
 - **La tendina dei fusi ha nove voci più quella salvata se è fuori elenco.**

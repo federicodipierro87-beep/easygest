@@ -56,6 +56,9 @@ interface SettingsBody {
   digestEnabled: boolean;
   digestDayOfWeek: number;
   taxRegime: string;
+  substituteTaxRateBp: number;
+  profitabilityCoefficientBp: number;
+  inpsRateBp: number;
 }
 
 interface ErrorBody {
@@ -86,6 +89,12 @@ afterEach(async () => {
       cancellationReminderDaysBefore: [60, 30, 15],
       digestEnabled: true,
       digestDayOfWeek: 1,
+      // Anche il blocco fiscale torna ai default: ora si può cambiare, e una
+      // prova che lo sposta lascerebbe la successiva su aliquote diverse.
+      taxRegime: 'FORFETTARIO',
+      substituteTaxRateBp: 500,
+      profitabilityCoefficientBp: 6700,
+      inpsRateBp: 2607,
     },
   });
 });
@@ -101,8 +110,8 @@ it('non risponde a chi non ha una sessione', async () => {
 });
 
 it('restituisce tutta la riga, non solo i campi degli avvisi', async () => {
-  // Alla Fase 6 servirà il blocco fiscale intero: aggiungerlo dopo vorrebbe
-  // dire cambiare la forma di una risposta già in uso.
+  // Il blocco fiscale intero: è quello che le previsioni leggono per sapere
+  // con che aliquote fare il conto.
   const response = await app.inject({ method: 'GET', url: '/settings', headers: alice.auth });
   const body = response.json<SettingsBody>();
 
@@ -110,6 +119,39 @@ it('restituisce tutta la riga, non solo i campi degli avvisi', async () => {
   expect(body.taxRegime).toBe('FORFETTARIO');
   expect(body.baseCurrency).toBe('EUR');
   expect(body.reminderDaysBefore).toEqual([30, 7, 1]);
+});
+
+it('salva regime e aliquote, che sono i numeri delle previsioni', async () => {
+  const response = await patch(alice, {
+    taxRegime: 'ORDINARIO',
+    substituteTaxRateBp: 1500,
+    profitabilityCoefficientBp: 7800,
+    inpsRateBp: 2400,
+  });
+
+  expect(response.statusCode).toBe(200);
+  const body = response.json<SettingsBody>();
+  expect(body.taxRegime).toBe('ORDINARIO');
+  expect(body.substituteTaxRateBp).toBe(1500);
+  expect(body.profitabilityCoefficientBp).toBe(7800);
+  expect(body.inpsRateBp).toBe(2400);
+});
+
+it('rifiuta un regime che non esiste e un’aliquota fuori scala', async () => {
+  // Un regime inventato farebbe passare le previsioni per un ramo che non
+  // c'è; un'aliquota oltre il 100% darebbe un imponibile più alto del
+  // fatturato.
+  expect((await patch(alice, { taxRegime: 'SUPERFORFETTARIO' })).statusCode).toBe(400);
+  expect((await patch(alice, { inpsRateBp: 10_001 })).statusCode).toBe(400);
+  expect((await patch(alice, { substituteTaxRateBp: -1 })).statusCode).toBe(400);
+  expect((await patch(alice, { profitabilityCoefficientBp: 67.5 })).statusCode).toBe(400);
+});
+
+it('non lascia cambiare l’IVA predefinita, che oggi non legge nessuno', async () => {
+  // Il form della spesa ha il 22% scritto a mano: salvarla qui creerebbe
+  // un'impostazione che si salva e non fa niente. Entra quando qualcuno la
+  // legge.
+  expect((await patch(alice, { defaultVatRateBp: 1000 })).statusCode).toBe(400);
 });
 
 it('restituisce gli anticipi normalizzati, non quelli digitati', async () => {

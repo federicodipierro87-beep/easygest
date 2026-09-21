@@ -8,17 +8,18 @@ import { requireUser } from '../plugins/auth';
 /**
  * Le preferenze dell'utente.
  *
- * Due rotte asimmetriche di proposito: `GET` restituisce tutta la riga, perché
- * alla Fase 6 servirà il blocco fiscale intero per calcolare le imposte e
- * aggiungerlo dopo vorrebbe dire cambiare la forma di una risposta già usata;
- * `PATCH` accetta solo i campi degli avvisi, che sono gli unici che questa fase
- * sa salvare senza rompere qualcosa a valle.
+ * Due rotte quasi simmetriche: `GET` restituisce tutta la riga, `PATCH` ne
+ * accetta i campi degli avvisi e quelli del fisco — regime, aliquota
+ * sostitutiva, coefficiente di redditività, aliquota INPS — che sono quelli da
+ * cui le previsioni prendono i numeri.
  *
- * `baseCurrency` è in lettura e non in scrittura, ed è la sola esclusione che
- * vale la pena di spiegare: il cambio viene congelato su ogni occorrenza nel
- * momento in cui matura, quindi i `baseGrossCents` già scritti sono espressi
- * nella valuta di allora. Cambiarla a metà strada non riconvertirebbe lo
- * storico, lo renderebbe incomparabile — e nessun errore lo segnalerebbe.
+ * Le due esclusioni valgono entrambe una riga. `baseCurrency` perché il cambio
+ * viene congelato su ogni occorrenza nel momento in cui matura, quindi i
+ * `baseGrossCents` già scritti sono espressi nella valuta di allora: cambiarla
+ * a metà strada non riconvertirebbe lo storico, lo renderebbe incomparabile — e
+ * nessun errore lo segnalerebbe. `defaultVatRateBp` perché oggi non la legge
+ * nessuno, e un'impostazione che si salva e non fa niente è peggio di
+ * un'impostazione che non c'è.
  */
 
 const SELECT = {
