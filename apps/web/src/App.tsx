@@ -10,6 +10,7 @@ import { DashboardPage } from '@/pages/DashboardPage';
 import { DueDatesPage } from '@/pages/DueDatesPage';
 import { ExpenseDetailPage } from '@/pages/ExpenseDetailPage';
 import { ExpensesPage } from '@/pages/ExpensesPage';
+import { ForecastPage } from '@/pages/ForecastPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { PaymentMethodsPage } from '@/pages/PaymentMethodsPage';
 import { ProfileSettingsPage } from '@/pages/ProfileSettingsPage';
@@ -51,6 +52,7 @@ export function App() {
           <Route path="/spese/:id" element={<ExpenseDetailPage />} />
           <Route path="/scadenze" element={<DueDatesPage />} />
           <Route path="/report" element={<ReportPage />} />
+          <Route path="/previsioni" element={<ForecastPage />} />
           <Route path="/clienti" element={<ClientsPage />} />
           <Route path="/fornitori" element={<VendorsPage />} />
           {/*

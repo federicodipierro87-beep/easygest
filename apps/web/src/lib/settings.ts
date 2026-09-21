@@ -3,6 +3,7 @@ import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query
 
 import { dashboardKeys } from './dashboard';
 import { expenseKeys, occurrenceKeys } from './expenses';
+import { forecastKeys } from './forecast';
 import { notificationKeys } from './notifications';
 import { authFetch } from './session';
 
@@ -44,6 +45,16 @@ export function useSettingsMutations() {
    * L'agenda ci sta dentro a maggior ragione: il suo «oggi» lo decide il
    * server leggendo proprio questo fuso, quindi cambiarlo può spostare una
    * scadenza da «in arrivo» a «in ritardo» senza che nulla a schermo lo dica.
+   *
+   * Le previsioni si rileggono per la stessa ragione e non per il fisco.
+   * `Forecast.today` è il giorno su cui il server ha tagliato fra reale e
+   * previsto, e lo calcola in questo fuso: spostarlo può spostare il confine, e
+   * con una spesa mensile un giorno di confine è una mensilità intera. Le
+   * **aliquote** invece non hanno bisogno di niente, e vale la pena dirlo
+   * perché sembra il contrario: il conto lo fa `simulate` nel browser leggendo
+   * `Settings`, che la riga qui sopra ha appena riscritto in cache. Invalidare
+   * `/forecast` per un coefficiente cambiato sarebbe una richiesta per dei
+   * numeri identici.
    */
   const update = useMutation({
     mutationFn: (patch: SettingsPatch) =>
@@ -55,6 +66,7 @@ export function useSettingsMutations() {
         queryClient.invalidateQueries({ queryKey: expenseKeys.all }),
         queryClient.invalidateQueries({ queryKey: occurrenceKeys.all }),
         queryClient.invalidateQueries({ queryKey: dashboardKeys.all }),
+        queryClient.invalidateQueries({ queryKey: forecastKeys.all }),
       ]);
     },
   });

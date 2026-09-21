@@ -19,6 +19,10 @@ const SECTIONS = [
   // Dopo le scadenze: sono le stesse righe lette una terza volta, sommate per
   // periodo invece che elencate. Chi guarda i report ci arriva da lì.
   { to: '/report', label: 'Report' },
+  // Dopo il report e non prima: il report dice cos'è già costato, le previsioni
+  // cosa costerà e cosa resta. È la stessa lettura spostata in avanti, e chi
+  // arriva alle previsioni ci arriva avendo guardato l'anno scorso.
+  { to: '/previsioni', label: 'Previsioni' },
   { to: '/clienti', label: 'Clienti' },
   { to: '/fornitori', label: 'Fornitori' },
   // Una voce sola per categorie e metodi di pagamento: si configurano una
