@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { NavLink, Outlet } from 'react-router';
 
 import { cn } from '@/lib/utils';
@@ -52,8 +53,14 @@ export function SettingsLayout() {
           ))}
         </nav>
 
+        {/* Un secondo `Suspense`, per la stessa ragione del primo a un livello
+            più in basso: senza, passando da «Avvisi» a «Fisco» sparirebbe
+            anche questa colonna di menù, che è l'unico modo per tornare
+            indietro. */}
         <div className="min-w-0 flex-1">
-          <Outlet />
+          <Suspense fallback={<p className="text-muted-foreground text-sm">Caricamento…</p>}>
+            <Outlet />
+          </Suspense>
         </div>
       </div>
     </div>

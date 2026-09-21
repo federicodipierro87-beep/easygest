@@ -1463,13 +1463,11 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   del processo — cioè a ogni deploy, e in locale a ogni ricarica di `tsx watch`.
   Per un limite anti-forza-bruta su un'applicazione a un solo utente va bene;
   diventerebbe un problema con più repliche, dove servirebbe un Redis condiviso.
-- **Il bundle del frontend è un unico file**, e Vite lo segnala. È tutto in una
-  volta perché non c'è ancora nessuno `React.lazy`: la candidata naturale sono le
-  pagine dietro il login, che chi arriva alla schermata di accesso non deve
-  scaricare. Non è più Recharts: la Fase 5 ha fatto i report **senza grafici**,
-  quindi la prima libreria pesante che avrebbe forzato la divisione non arriverà.
-  La misura aggiornata e il criterio per decidere sono più sotto, nella nota sul
-  bundle da rimisurare a ogni fase.
+- ~~**Il bundle del frontend è un unico file**, e Vite lo segnala.~~ Pagato in
+  Fase 6: ogni pagina dietro il login è un `React.lazy`, il login no. Restano da
+  dividere le dipendenze comuni — Zod arriva al login attraverso
+  `lib/session.ts` — e la misura aggiornata è più sotto, nella nota sul bundle da
+  rimisurare a ogni fase.
 - **`testTimeout` e `hookTimeout` di Vitest sono alzati a 20 s.** Il primo
   sintomo è stato un test del frontend che passava da solo e scadeva a 5 s
   insieme agli altri: fa `vi.resetModules()` e reimporta l'intero grafo di React,
@@ -1571,11 +1569,18 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   la pagina del profilo da 655 a 660 kB (192 kB gzip), contro i +4 kB
   stimati, senza nessuna dipendenza né primitiva shadcn nuova; la dashboard e il
   report da 660 a **674 kB (196 kB gzip)**, due pagine e nessuna dipendenza
-  nuova. La crescita resta proporzionata, ma **i 700 kB sono vicini**: il primo
-  `React.lazy` va anticipato alla prossima pagina, e la sua candidata naturale
-  non è più Recharts — che la Fase 5 ha deciso di non introdurre — ma tutto
-  ciò che sta dietro il login, che chi arriva alla schermata di accesso non deve
-  scaricare.
+  nuova; le previsioni e la pagina del fisco da 674 a **693 kB (201 kB gzip)**,
+  cioè i 700 kB annunciati, che è il punto in cui il debito è stato pagato.
+  Dopo il primo `React.lazy` — tutto ciò che sta dietro il login, come previsto,
+  e non più Recharts che la Fase 5 ha deciso di non introdurre — il **primo
+  caricamento** scende a **511 kB (164 kB gzip)**: sei file, cioè l'ingresso da
+  338 kB più i cinque che `index.html` precarica. Il numero da guardare è questo
+  e non i 338 kB dell'ingresso da solo, che sarebbe la metà lusinghiera della
+  misura. Il taglio vale quindi il **26 %** in byte e il **18 %** in gzip.
+  Il pezzo più grosso di ciò che resta è `session-*.js`, 116 kB (35 kB gzip):
+  è `@easygest/shared` con dentro Zod, che arriva al login attraverso
+  `lib/session.ts` e che l'indice del pacchetto riesporta per intero. È il
+  prossimo taglio possibile, e costerebbe import profondi dentro `shared`.
 - **Un'email fallita non viene mai ritentata.** La riga `ReminderLog` resta con
   `succeeded = false` e il giro successivo la salta, perché la chiave esiste già.
   È voluto — è la scelta che garantisce «al massimo una volta» — ma significa che

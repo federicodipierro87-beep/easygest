@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Link, NavLink, Outlet } from 'react-router';
 
 import { NotificationsBell } from '@/components/NotificationsBell';
@@ -108,8 +108,16 @@ export function AppLayout() {
         </div>
       </header>
 
+      {/*
+        Il `Suspense` sta qui e non attorno alle rotte, così l'intestazione e il
+        menù non spariscono mentre arriva il pezzo della pagina nuova: si vede
+        la stessa riga di attesa che ogni pagina mostra già quando la sua query
+        è in corso, e non una pagina bianca.
+      */}
       <main className="mx-auto max-w-5xl px-6 py-8">
-        <Outlet />
+        <Suspense fallback={<p className="text-muted-foreground text-sm">Caricamento…</p>}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

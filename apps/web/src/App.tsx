@@ -1,22 +1,9 @@
+import { lazy } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router';
 
 import { AppLayout } from '@/components/AppLayout';
 import { RequireAuth } from '@/components/RequireAuth';
-import { SettingsLayout } from '@/components/SettingsLayout';
-import { AlertsSettingsPage } from '@/pages/AlertsSettingsPage';
-import { CategoriesPage } from '@/pages/CategoriesPage';
-import { ClientsPage } from '@/pages/ClientsPage';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { DueDatesPage } from '@/pages/DueDatesPage';
-import { ExpenseDetailPage } from '@/pages/ExpenseDetailPage';
-import { ExpensesPage } from '@/pages/ExpensesPage';
-import { ForecastPage } from '@/pages/ForecastPage';
 import { LoginPage } from '@/pages/LoginPage';
-import { PaymentMethodsPage } from '@/pages/PaymentMethodsPage';
-import { ProfileSettingsPage } from '@/pages/ProfileSettingsPage';
-import { ReportPage } from '@/pages/ReportPage';
-import { TaxSettingsPage } from '@/pages/TaxSettingsPage';
-import { VendorsPage } from '@/pages/VendorsPage';
 
 /**
  * Rotte dell'applicazione.
@@ -29,7 +16,66 @@ import { VendorsPage } from '@/pages/VendorsPage';
  * Qualunque percorso sconosciuto rimanda alla home invece di mostrare una
  * pagina di errore: finché le sezioni sono due, un 404 sarebbe quasi sempre un
  * refuso nella barra degli indirizzi.
+ *
+ * ## Il taglio passa dal login
+ *
+ * Tutto ciò che sta **dietro** l'accesso è caricato a richiesta, e solo il
+ * login è statico. Il motivo è che chi arriva su `/login` non ha ancora una
+ * sessione e non vedrà mai nessuna di queste pagine finché non ne ha una:
+ * scaricare report, previsioni e cinque pagine di impostazioni per mostrare due
+ * caselle e un bottone è il caso peggiore su una connessione lenta, ed è anche
+ * il primo schermo che qualcuno vede del programma.
+ *
+ * `AppLayout` e `RequireAuth` restano statici di proposito: sono
+ * l'intelaiatura, e caricarli a richiesta vorrebbe dire una pagina bianca al
+ * posto dell'intestazione a ogni ingresso. Il `Suspense` sta dentro
+ * `AppLayout`, attorno al solo `Outlet`, così il menù non sparisce mentre
+ * arriva la pagina.
  */
+
+const DashboardPage = lazy(async () => ({
+  default: (await import('@/pages/DashboardPage')).DashboardPage,
+}));
+const ExpensesPage = lazy(async () => ({
+  default: (await import('@/pages/ExpensesPage')).ExpensesPage,
+}));
+const ExpenseDetailPage = lazy(async () => ({
+  default: (await import('@/pages/ExpenseDetailPage')).ExpenseDetailPage,
+}));
+const DueDatesPage = lazy(async () => ({
+  default: (await import('@/pages/DueDatesPage')).DueDatesPage,
+}));
+const ReportPage = lazy(async () => ({
+  default: (await import('@/pages/ReportPage')).ReportPage,
+}));
+const ForecastPage = lazy(async () => ({
+  default: (await import('@/pages/ForecastPage')).ForecastPage,
+}));
+const ClientsPage = lazy(async () => ({
+  default: (await import('@/pages/ClientsPage')).ClientsPage,
+}));
+const VendorsPage = lazy(async () => ({
+  default: (await import('@/pages/VendorsPage')).VendorsPage,
+}));
+const SettingsLayout = lazy(async () => ({
+  default: (await import('@/components/SettingsLayout')).SettingsLayout,
+}));
+const CategoriesPage = lazy(async () => ({
+  default: (await import('@/pages/CategoriesPage')).CategoriesPage,
+}));
+const PaymentMethodsPage = lazy(async () => ({
+  default: (await import('@/pages/PaymentMethodsPage')).PaymentMethodsPage,
+}));
+const AlertsSettingsPage = lazy(async () => ({
+  default: (await import('@/pages/AlertsSettingsPage')).AlertsSettingsPage,
+}));
+const TaxSettingsPage = lazy(async () => ({
+  default: (await import('@/pages/TaxSettingsPage')).TaxSettingsPage,
+}));
+const ProfileSettingsPage = lazy(async () => ({
+  default: (await import('@/pages/ProfileSettingsPage')).ProfileSettingsPage,
+}));
+
 export function App() {
   return (
     <BrowserRouter>
