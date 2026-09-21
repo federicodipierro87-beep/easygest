@@ -14,6 +14,7 @@ import { LoginPage } from '@/pages/LoginPage';
 import { PaymentMethodsPage } from '@/pages/PaymentMethodsPage';
 import { ProfileSettingsPage } from '@/pages/ProfileSettingsPage';
 import { ReportPage } from '@/pages/ReportPage';
+import { TaxSettingsPage } from '@/pages/TaxSettingsPage';
 import { VendorsPage } from '@/pages/VendorsPage';
 
 /**
@@ -63,6 +64,7 @@ export function App() {
             <Route path="categorie" element={<CategoriesPage />} />
             <Route path="metodi-di-pagamento" element={<PaymentMethodsPage />} />
             <Route path="avvisi" element={<AlertsSettingsPage />} />
+            <Route path="fisco" element={<TaxSettingsPage />} />
             <Route path="profilo" element={<ProfileSettingsPage />} />
           </Route>
         </Route>

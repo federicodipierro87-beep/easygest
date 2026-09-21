@@ -12,6 +12,7 @@ import { AlertsSettingsPage } from './AlertsSettingsPage';
 import { CategoriesPage } from './CategoriesPage';
 import { PaymentMethodsPage } from './PaymentMethodsPage';
 import { ProfileSettingsPage } from './ProfileSettingsPage';
+import { TaxSettingsPage } from './TaxSettingsPage';
 
 /**
  * Prova di accensione delle pagine di configurazione.
@@ -23,6 +24,11 @@ import { ProfileSettingsPage } from './ProfileSettingsPage';
  * una categoria che la usa; e la regola dell'anticipo più vicino, che se sparisse
  * dal testo lascerebbe una casella con dentro «30, 7, 1» a far credere che
  * arrivino tre email.
+ *
+ * Sul fisco c'è una terza cosa, ed è una percentuale: la deduzione forfettaria
+ * si ricava dal coefficiente salvato e non è un 33 battuto a mano. Le
+ * impostazioni di prova hanno il coefficiente al 78 % proprio perché un numero
+ * scritto a mano passerebbe inosservato con il 67 % del caso più comune.
  */
 
 function html(element: ReactElement, seed?: (client: QueryClient) => void): string {
@@ -126,6 +132,52 @@ describe('avvisi', () => {
   });
 });
 
+describe('fisco', () => {
+  it('mostra il regime e le tre aliquote, in percentuale', () => {
+    // In percentuale e non in punti base: `7800` in una casella etichettata
+    // «coefficiente di redditività» si legge come settemilaottocento per cento.
+    const markup = html(<TaxSettingsPage />, withSettings);
+
+    expect(markup).toContain('Regime fiscale');
+    expect(markup).toContain('Coefficiente di redditività');
+    expect(markup).toContain('Aliquota contributiva INPS');
+    expect(markup).toContain('Imposta sostitutiva');
+    expect(markup).toContain('78,00');
+    expect(markup).toContain('26,07');
+  });
+
+  it('dice che nel forfettario i costi non si deducono', () => {
+    // È il fatto più controintuitivo del programma, e si legge qui **prima** di
+    // simulare: una spesa riduce quanto resta in tasca e non muove l'imposta.
+    const markup = html(<TaxSettingsPage />, withSettings);
+
+    expect(markup).toContain('i costi non si deducono');
+    expect(markup).toContain('deduzione forfettaria');
+  });
+
+  it('calcola la deduzione forfettaria dal coefficiente, invece di scriverla a mano', () => {
+    // Con il coefficiente al 78% la deduzione è il 22%, non il 33% del caso
+    // più comune: una frase che dicesse comunque «33%» sarebbe falsa proprio
+    // per chi ha appena cambiato il numero qui sopra.
+    const markup = html(<TaxSettingsPage />, withSettings);
+
+    expect(markup).toContain('78%');
+    expect(markup).toContain('22%');
+    expect(markup).not.toContain('33%');
+  });
+
+  it('in ordinario dichiara di non saper fare il conto', () => {
+    // Le previsioni sanno solo il forfettario, e dirlo qui è meglio che
+    // lasciarlo scoprire a chi apre la pagina delle previsioni.
+    const markup = html(<TaxSettingsPage />, (client) => {
+      client.setQueryData(settingsKeys.all, { ...SETTINGS, taxRegime: 'ORDINARIO' });
+    });
+
+    expect(markup).toContain('regime ordinario');
+    expect(markup).toContain('scaglioni IRPEF');
+  });
+});
+
 describe('profilo', () => {
   it('mostra i due moduli separati', () => {
     // Sono due richieste a due rotte diverse: un modulo solo dovrebbe decidere
@@ -156,6 +208,7 @@ describe('menù delle impostazioni', () => {
     expect(markup).toContain('/impostazioni/categorie');
     expect(markup).toContain('/impostazioni/metodi-di-pagamento');
     expect(markup).toContain('/impostazioni/avvisi');
+    expect(markup).toContain('/impostazioni/fisco');
     expect(markup).toContain('/impostazioni/profilo');
   });
 });

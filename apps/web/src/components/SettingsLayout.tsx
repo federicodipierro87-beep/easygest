@@ -6,6 +6,11 @@ const PAGES = [
   { to: '/impostazioni/categorie', label: 'Categorie' },
   { to: '/impostazioni/metodi-di-pagamento', label: 'Metodi di pagamento' },
   { to: '/impostazioni/avvisi', label: 'Avvisi' },
+  // Accanto agli avvisi perché sono la stessa specie: due pagine che cambiano
+  // il comportamento di un'altra: gli avvisi decidono cosa arriva per email, il
+  // fisco decide con che numeri le previsioni fanno il conto. Categorie e metodi
+  // di pagamento, invece, riempiono delle tendine.
+  { to: '/impostazioni/fisco', label: 'Fisco' },
   // In coda e non in testa: la prima voce di questo elenco e il reindirizzamento
   // di `App.tsx` sono due cose separate, e metterci il profilo qui sopra
   // lascerebbe l'indirizzo nudo `/impostazioni` a puntare ancora alle categorie.
@@ -20,9 +25,9 @@ const PAGES = [
  * nella barra principale accanto a «Clienti» e «Fornitori» darebbe lo stesso
  * peso a ciò che si apre ogni giorno e a ciò che si apre due volte l'anno.
  *
- * Il menù è a sinistra e non a schede in cima perché l'elenco crescerà — la
- * Fase 6 porta qui il regime fiscale e le aliquote — e delle schede che vanno
- * a capo sono peggio di una colonna.
+ * Il menù è a sinistra e non a schede in cima perché l'elenco sarebbe cresciuto,
+ * e delle schede che vanno a capo sono peggio di una colonna. È cresciuto: il
+ * regime fiscale e le aliquote sono la quinta voce.
  */
 export function SettingsLayout() {
   return (
