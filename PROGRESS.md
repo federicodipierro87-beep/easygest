@@ -16,7 +16,7 @@ settimana. Contiene **cosa è fatto** e soprattutto **perché è fatto così**.
 | 3    | Frontend: lista e dettaglio spese, filtri, form                     | ✅ Completata |
 | 4    | Cron, email promemoria, digest settimanale, notifiche in-app        | ✅ Completata |
 | 5    | Dashboard, report, export CSV e PDF                                 | ✅ Completata |
-| 6    | Previsioni e simulatore what-if                                     | ⬜ Da fare    |
+| 6    | Previsioni e simulatore what-if                                     | ✅ Completata |
 | 7    | Archivio documenti: upload R2, ricerca full-text, export ZIP        | ⬜ Da fare    |
 | 8    | Rifinitura, documentazione finale, hardening                        | ⬜ Da fare    |
 
@@ -106,6 +106,40 @@ fatta col PDF vero, generato via `Page.printToPDF` da Chrome headless su tre
 anni di dati di `seed:demo`, e ha cambiato una decisione presa in anticipo — il
 `break-inside-avoid` sulle sezioni delle tabelle, che sprecava due facciate.
 Dettagli, motivazioni e limiti noti sono più sotto, in «Report ed esportazione».
+
+La Fase 6 è chiusa e risponde a una domanda che le prime cinque non facevano:
+**«quanto mi resta?»**. Si scrive il fatturato previsto dell'anno su
+`/previsioni`, si vedono contributi, imposta sostitutiva e costi, e si muovono
+le leve — togliere una spesa, ritoccare i costi futuri di una percentuale,
+immaginarne una nuova — per capire cosa cambia. Il regime e le tre aliquote si
+configurano in `/impostazioni/fisco`, che è la prima pagina di impostazioni a
+decidere il contenuto di un'altra.
+
+Tutto poggia su un fatto controintuitivo che vale la pena ripetere qui perché è
+la ragione per cui la pagina esiste: **nel forfettario i costi non si
+deducono**. Il coefficiente di redditività li sostituisce in blocco, quindi una
+spesa in più riduce quanto resta in tasca e lascia l'imposta dov'era, al
+centesimo. È scritto a schermo accanto al numero, è scritto nei docstring di
+`taxes.ts` e `simulator.ts`, ed è la prima prova di `simulator.test.ts`, il cui
+unico compito è fermare la mano di chi un giorno «correggerà» il conto facendo
+dedurre le spese: una correzione che non romperebbe niente, non accenderebbe
+nessun errore, e produrrebbe un numero credibile e falso su cui qualcuno
+accantona dei soldi.
+
+La previsione dell'anno è **ibrida**, e il taglio passa da _oggi_: prima di
+oggi solo occorrenze reali, mai sintetizzate; da oggi in poi la reale vince e si
+riempiono solo i buchi. La regola ingenua — «ogni data generata senza
+occorrenza diventa una previsione» — avrebbe inventato lo storico, che è
+esattamente ciò che `occurrences.ts` si rifiuta di fare, e avrebbe prodotto
+doppioni ogni volta che l'ancora di una spesa è stata spostata dopo un mese già
+pagato. Niente di tutto questo si persiste: la previsione si ricalcola a ogni
+richiesta.
+
+Ha pagato anche il debito del bundle dichiarato in Fase 5. Le due pagine nuove
+l'hanno portato ai 700 kB annunciati, e il primo `React.lazy` ha diviso tutto
+ciò che sta dietro il login: il primo caricamento è sceso da 693 a 511 kB
+(da 201 a 164 kB gzip), misurati. Limiti noti e motivazioni sono più sotto, in
+«Previsioni e simulatore».
 
 ---
 
@@ -1232,6 +1266,101 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
     predefinito, non una garanzia;
   - **validato solo su Chrome**. Firefox e Safari hanno motori di frammentazione
     diversi e sono fuori perimetro.
+
+### Previsioni e simulatore
+
+- **Nel forfettario i costi non si deducono, e questa è la regola che regge
+  tutto.** Il coefficiente di redditività _è_ la deduzione: `taxes.ts` non ha
+  nemmeno un parametro per le spese, ed è di proposito — chi legge quel modulo
+  cercando dove si sottraggono i costi deve non trovarlo. Le leve del simulatore
+  muovono il netto e lasciano `totalDueCents` dov'era, e la prima prova di
+  `simulator.test.ts` tira tutte e tre le leve insieme per dirlo.
+- **`taxes.ts` e non `fiscal.ts`**: quel nome era già preso, e non da questo. In
+  `fiscal.ts` c'è la validazione delle anagrafiche — partita IVA, codice fiscale,
+  codice SDI — che l'italiano chiama «fiscale» esattamente come chiama fiscale
+  un'imposta. Due cose diverse, due file.
+- **La previsione è ibrida e taglia su _oggi_, non su «c'è una riga?».** Prima
+  di oggi solo occorrenze reali; da oggi in poi la reale vince e si sintetizzano
+  i buchi. È la regola che evita due guasti silenziosi: lo storico inventato —
+  un abbonamento registrato a settembre con `startDate` a gennaio si vedrebbe
+  apparire otto righe di un passato in cui non c'era — e i doppioni, perché
+  `stale` rimuove solo le `PLANNED` con `dueDate >= oggi` e una vecchia riga
+  `PAID` sopravvive all'ancora spostata.
+- **Il cambio si chiede a _oggi_, non alla `dueDate`.** `findRate` rifiuta un
+  tasso più vecchio di dieci giorni rispetto alla data richiesta, quindi
+  chiederlo per una scadenza di dicembre garantirebbe un 422: un `findRate` per
+  valuta distinta alla data di oggi, e `applyRate` puro su ogni riga. Non
+  `convertToBase`, che farebbe un viaggio al database per riga e lancia invece
+  di dire cosa non sa fare. Un futuro ritocco che lo rimettesse riporterebbe il 422.
+- **`GET /forecast` restituisce le righe, non gli aggregati.** Le leve lavorano
+  sulla singola spesa, e un'API che desse già i totali costringerebbe a un giro
+  di rete a ogni spunta. La piega la fa il browser con `foldForecast`, che è la
+  stessa funzione che userebbe il server.
+- **`today` viaggia nella risposta** ed è il confine fra reale e previsto. Non si
+  ricalcola nel browser: due «oggi» diversi — uno nel fuso dell'utente, uno in
+  quello del browser — sposterebbero il confine di un giorno, e con una spesa
+  mensile quel giorno è una mensilità intera. È anche il motivo per cui cambiare
+  il fuso invalida `forecastKeys`, mentre cambiare un'aliquota non invalida
+  niente: il conto lo fa `simulate` nel browser leggendo il `Settings` che
+  `setQueryData` ha appena riscritto.
+- **Tutte le leve stanno nell'indirizzo.** Una simulazione si manda a qualcuno —
+  al commercialista, o a se stessi fra un mese — e `useState` non si incolla. E
+  la suite gira in `environment: 'node'`, dove un cursore non si può né rendere
+  né muovere mentre `?escluse=hosting` si scrive in una riga: è così che il fatto
+  di dominio è provato end-to-end e non solo dentro `simulate`.
+- **`leversFromParams` ripara invece di rifiutare**, all'opposto della regola dei
+  moduli. La differenza è che in un modulo c'è una casella da colorare di rosso,
+  qui c'è solo un indirizzo incollato male da cui non si torna indietro.
+- **`simulate` sta in `packages/shared` e le funzioni sull'URL no.** Quel
+  pacchetto compila con `lib: ["ES2023"]` e `types: []` — senza DOM e senza
+  Node — dove `URLSearchParams` non esiste; tenerlo platform-free è ciò che
+  permette allo stesso `simulate` di girare nel browser e nell'API. Il confine
+  passa fra «che cosa vuol dire questo indirizzo» e «che numeri ne escono».
+- **`defaultVatRateBp` resta fuori da `settingsPatchSchema`**, ed è l'unico campo
+  fiscale escluso. Oggi non lo legge nessuno: il form della spesa ha il 22 %
+  scritto a mano. Renderlo modificabile creerebbe un'impostazione che si salva e
+  non fa niente, che è peggio di un'impostazione che non c'è. Entra quando
+  qualcuno la legge.
+
+**Limiti noti**, che qui sono la parte che conta:
+
+- **i contributi si deducono per competenza e non per cassa.** L'art. 1 c. 64
+  L. 190/2014 deduce i contributi _versati_ nell'anno, e quelli di competenza
+  dell'anno _n_ si versano fra giugno e novembre dell'anno _n+1_. Il conto per
+  competenza sbaglia di circa lo 0,87 % del fatturato — 437 € su 50.000 € — e a
+  regime l'errore si compensa fra un anno e l'altro. **Non nel primo anno**, dove
+  di versato non c'è ancora niente e l'errore è totale: ed è anche il caso in cui
+  un simulatore si usa di più. Per questo `contributionsPaidCents` è un parametro
+  esplicito di `foldForfettario`, con default il valore di competenza; quello che
+  manca è la casella in pagina per scriverlo;
+- **l'eccedenza contributiva oltre l'imponibile è troncata a zero**, non
+  riportata. Succede al secondo anno, quando saldo e acconto cadono insieme su un
+  imponibile calato: una base negativa produrrebbe un'imposta negativa, cioè un
+  credito che non esiste. L'eccedenza vera si porta in dichiarazione come onere
+  deducibile altrove, e qui non si vede;
+- **solo forfettario.** In ordinario `simulatorRefusal` sostituisce l'intera
+  pagina: scaglioni IRPEF, addizionali regionali e comunali e deduzioni reali
+  sono un altro programma, e un numero approssimato sarebbe peggio di nessun
+  numero;
+- **il massimale INPS non è implementato**, perché non è raggiungibile:
+  servirebbero circa 180.000 € di fatturato, cioè 1,8 volte il tetto rigido del
+  regime, oltre il quale il forfettario è già decaduto;
+- **il fatturato non si persiste**, e non è una dimenticanza. Le fatture attive
+  arrivano in Fase 7 come `Document(INVOICE_ACTIVE)`, e una tabella ombra del
+  fatturato scritta oggi sarebbe una seconda verità da riconciliare domani. Il
+  prezzo è che il numero va riscritto ogni volta — o tenuto nell'indirizzo, che
+  è il motivo in più per cui le leve stanno lì;
+- **l'attribuzione al mese è per `dueDate`**, coerente col report ma **non è la
+  competenza**: un canone annuale pagato a marzo pesa tutto su marzo;
+- **il gradino di cambio al confine di oggi**: le righe passate portano il tasso
+  congelato sull'occorrenza, quelle future il tasso odierno. La stessa spesa in
+  dollari vale due controvalori diversi a due settimane di distanza, e la
+  differenza non è un errore ma non è nemmeno una previsione del cambio;
+- **una spesa in pausa pesa il suo passato e zero futuro.** È la lettura onesta
+  di «sospesa», ma chi la riattiverà a ottobre vedrà il conto cambiare;
+- **l'indirizzo diventa illeggibile con molte spese escluse**: venti id in
+  `?escluse=` sono circa cinquecento caratteri, e il limite pratico di un URL
+  incollato in un'email arriva prima di quello del browser.
 
 ### Infrastruttura locale
 
