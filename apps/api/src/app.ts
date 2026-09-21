@@ -11,6 +11,7 @@ import { registerAuthRoutes } from './routes/auth';
 import { registerCategoryRoutes } from './routes/categories';
 import { registerClientRoutes } from './routes/clients';
 import { registerExpenseRoutes } from './routes/expenses';
+import { registerForecastRoutes } from './routes/forecast';
 import { registerHealthRoutes } from './routes/health';
 import { registerJobRoutes } from './routes/jobs';
 import { registerDashboardRoutes } from './routes/dashboard';
@@ -162,6 +163,7 @@ export async function buildApp(env: Env, overrides: AppOverrides = {}): Promise<
   registerDashboardRoutes(app);
   registerNotificationRoutes(app);
   registerReportRoutes(app);
+  registerForecastRoutes(app);
   registerSettingsRoutes(app);
   registerJobRoutes(app, env, overrides.fxFetcher);
 

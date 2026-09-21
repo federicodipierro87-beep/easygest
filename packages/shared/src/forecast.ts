@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 import type { OccurrenceStatus } from './expenses';
 import type { Cents } from './money';
 import { countsTowardReport } from './reports';
@@ -23,6 +25,34 @@ import { countsTowardReport } from './reports';
  * spesa non può cadere in due mesi diversi in due pagine diverse. Non è la
  * competenza, e il registro lo dichiara.
  */
+
+/**
+ * L'anno che si può chiedere.
+ *
+ * Gli estremi non difendono da un calcolo pesante — le righe sintetiche di un
+ * anno sono al massimo trecentosessantacinque per spesa, qualunque sia l'anno —
+ * ma da una domanda che non è una domanda: `?anno=0` o `?anno=99999` sono un
+ * refuso nella barra degli indirizzi, e rispondere con dodici mesi vuoti li
+ * farebbe sembrare una risposta.
+ */
+export const FORECAST_MIN_YEAR = 2000;
+export const FORECAST_MAX_YEAR = 2100;
+
+/**
+ * `z.coerce` perché arriva da una query string, dove tutto è testo.
+ *
+ * `.int()` dopo la coercizione è quello che rifiuta `2027,5` e `duemila`:
+ * `Number('duemila')` è `NaN`, che non è intero.
+ */
+export const forecastQuerySchema = z.object({
+  year: z.coerce
+    .number()
+    .int('L’anno va scritto in cifre')
+    .min(FORECAST_MIN_YEAR, `Il primo anno previsto è il ${String(FORECAST_MIN_YEAR)}`)
+    .max(FORECAST_MAX_YEAR, `L’ultimo anno previsto è il ${String(FORECAST_MAX_YEAR)}`),
+});
+
+export type ForecastQuery = z.infer<typeof forecastQuerySchema>;
 
 /**
  * Una riga di previsione: o un'occorrenza vera, o una data che ci sarà.
@@ -58,6 +88,44 @@ export interface ForecastRow {
   source: 'reale' | 'previsione';
   /** `null` sulle sintetiche: una riga che non c'è non ha uno stato. */
   status: OccurrenceStatus | null;
+}
+
+/**
+ * Una spesa il cui futuro non si è potuto convertire.
+ *
+ * Non è un errore: le righe passate hanno il loro controvalore congelato e
+ * restano al loro posto, è solo il futuro a non avere un cambio con cui essere
+ * pesato. La risposta resta 200 e la spesa finisce qui, perché un totale che
+ * manca si vede mentre un totale sbagliato per difetto no.
+ */
+export interface ForecastUnconverted {
+  expenseId: string;
+  expenseName: string;
+  currency: string;
+}
+
+/**
+ * Quello che l'API restituisce: **le righe**, non gli aggregati.
+ *
+ * Le leve del simulatore lavorano sulla singola spesa — togline una, ritocca
+ * del 10 % i costi futuri — e un'API che desse già i totali costringerebbe a un
+ * giro di rete a ogni spunta. La piega la fa il browser, con `foldForecast`, ed
+ * è la stessa funzione che userebbe il server.
+ *
+ * `today` viaggia nella risposta e non si ricalcola nel browser. È il giorno su
+ * cui il server ha tagliato fra reale e previsto, ed è lo stesso su cui il
+ * simulatore deve decidere quali righe la percentuale può toccare: due «oggi»
+ * diversi — uno nel fuso dell'utente, uno in quello del browser — sposterebbero
+ * il confine di un giorno, e quel giorno è un mese intero se la spesa è
+ * mensile.
+ */
+export interface Forecast {
+  year: number;
+  baseCurrency: string;
+  /** Il giorno del taglio, nel fuso dell'utente. */
+  today: string;
+  rows: ForecastRow[];
+  unconverted: ForecastUnconverted[];
 }
 
 /**
