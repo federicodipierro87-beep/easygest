@@ -131,6 +131,28 @@ describe('le leve sui costi', () => {
     expect(result.summary.forecastCents).toBe(22_000);
   });
 
+  it('spezza i costi sul confine di oggi, e la leva muove solo il futuro', () => {
+    // La divisione che la pagina mostra: muovendo il cursore si vede cambiare
+    // una riga sola. Se un giorno la percentuale tornasse a toccare tutto,
+    // `settledCents` se ne accorgerebbe prima di chiunque guardi lo schermo.
+    const fermo = simulate(ROWS, levers(), context);
+    expect(fermo.settledCents).toBe(10_000);
+    expect(fermo.upcomingCents).toBe(20_000);
+
+    const tirato = simulate(ROWS, levers({ costAdjustmentBp: 11_000 }), context);
+    expect(tirato.settledCents).toBe(10_000);
+    expect(tirato.upcomingCents).toBe(22_000);
+  });
+
+  it('le due parti dei costi sommano sempre al totale', () => {
+    // Sommano a `summary.totalCents` anche con l'ipotetica in mezzo, che nasce
+    // da oggi in poi e deve quindi ricadere tutta nella parte futura.
+    const result = simulate(ROWS, levers({ extraMonthlyCents: 5_000 }), context);
+
+    expect(result.settledCents + result.upcomingCents).toBe(result.summary.totalCents);
+    expect(result.settledCents).toBe(10_000);
+  });
+
   it('escludere una spesa la toglie dai costi, non dalle imposte', () => {
     const result = simulate(ROWS, levers({ excludedExpenseIds: ['hosting'] }), context);
 

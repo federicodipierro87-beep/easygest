@@ -92,6 +92,22 @@ export interface SimulationResult {
   /** Le righe dopo le leve: escluse tolte, futuro ritoccato, ipotetica in coda. */
   rows: ForecastRow[];
   summary: ForecastSummary;
+  /**
+   * I costi spezzati sul confine di oggi, che è dove le leve smettono di agire.
+   *
+   * Sommano a `summary.totalCents` e servono a rendere visibile una cosa che
+   * altrimenti si deve indovinare: la percentuale sui costi e la spesa
+   * ipotetica toccano **solo** `upcomingCents`. Senza questa divisione la leva
+   * muove un quarto del totale e la pagina non dice quale quarto, che è il modo
+   * più rapido per far dubitare di un numero corretto.
+   *
+   * Il taglio lo fa `simulate` e non chi disegna la pagina, perché è la stessa
+   * riga che decide quali costi ritoccare: due copie della regola portante
+   * della previsione possono divergere, e divergerebbero in silenzio.
+   */
+  settledCents: Cents;
+  /** I costi da oggi compreso a fine anno: l'unica parte che le leve muovono. */
+  upcomingCents: Cents;
   /** Fatturato meno contributi, imposta e costi: la risposta alla domanda. */
   netCents: Cents;
 }
@@ -178,6 +194,17 @@ export function simulate(
   adjusted.push(...hypotheticalRows(levers.extraMonthlyCents, today, context.year));
   adjusted.sort(byDueDateThenName);
 
+  // Lo stesso confronto di `touchable` qui sopra, sulle righe già ritoccate:
+  // `upcomingCents` è quindi il totale *dopo* la leva, che è quello che si
+  // vede muoversi. Le ipotetiche ci ricadono dentro da sé, perché nascono da
+  // oggi in poi.
+  let settledCents = 0;
+  let upcomingCents = 0;
+  for (const row of adjusted) {
+    if (row.dueDate >= context.today) upcomingCents += row.baseGrossCents;
+    else settledCents += row.baseGrossCents;
+  }
+
   const summary = foldForecast(adjusted, { year: context.year });
 
   const rates = levers.rates ?? {};
@@ -194,6 +221,8 @@ export function simulate(
     taxes,
     rows: adjusted,
     summary,
+    settledCents,
+    upcomingCents,
     netCents: levers.revenueCents - taxes.totalDueCents - summary.totalCents,
   };
 }

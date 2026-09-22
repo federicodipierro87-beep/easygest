@@ -125,6 +125,21 @@ describe('il conto a schermo', () => {
     expect(markup).toContain('39.528,22'); // 50.000 − 9.971,78 − 500
   });
 
+  it('spezza i costi in due righe, e il cursore ne muove una sola', () => {
+    // Il difetto che questa divisione ripara: con un totale unico la leva
+    // cambia una parte della cifra e la pagina non dice quale. Qui i 100 € di
+    // febbraio restano scritti identici mentre i 200 € di aprile raddoppiano.
+    const fermo = html(BASE);
+    expect(fermo).toContain('Costi fino a oggi');
+    expect(fermo).toContain('Costi da oggi a fine anno');
+    expect(fermo).toContain('-100,00');
+    expect(fermo).toContain('-200,00');
+
+    const tirato = html(`${BASE}&costi=200`);
+    expect(tirato).toContain('-100,00'); // febbraio, fermo
+    expect(tirato).toContain('-400,00'); // aprile, raddoppiato
+  });
+
   it('le aliquote scritte nell’indirizzo vincono su quelle salvate', () => {
     const markup = html(`${BASE}&coefficiente=78`);
 

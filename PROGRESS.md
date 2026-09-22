@@ -1308,6 +1308,15 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   la suite gira in `environment: 'node'`, dove un cursore non si può né rendere
   né muovere mentre `?escluse=hosting` si scrive in una riga: è così che il fatto
   di dominio è provato end-to-end e non solo dentro `simulate`.
+- **I costi sono spezzati sul confine di oggi**, e non è una rifinitura estetica:
+  è la correzione di un difetto trovato usando la pagina. Con un totale unico, il
+  cursore sui costi muoveva soltanto le scadenze da oggi in poi — cioè un quarto
+  della cifra a settembre — e niente diceva quale quarto: la leva sembrava rotta
+  proprio mentre faceva la cosa giusta. Ora `simulate` restituisce `settledCents`
+  e `upcomingCents`, il riquadro mostra due righe, e si vede muoversi solo la
+  seconda. Il taglio lo fa il simulatore e non la pagina, perché è la stessa
+  riga che decide quali costi ritoccare: due copie di quella regola
+  divergerebbero in silenzio.
 - **`leversFromParams` ripara invece di rifiutare**, all'opposto della regola dei
   moduli. La differenza è che in un modulo c'è una casella da colorare di rosso,
   qui c'è solo un indirizzo incollato male da cui non si torna indietro.

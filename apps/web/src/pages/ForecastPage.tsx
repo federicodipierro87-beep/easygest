@@ -139,11 +139,22 @@ function Reckoning({
         currency={currency}
         hint="Sull’imponibile meno i contributi"
       />
+      {/* Due righe e non una, perché il cursore ne muove solo la seconda: con
+          un totale unico si vede cambiare un quarto della cifra senza sapere
+          quale quarto, ed è il modo più rapido per far dubitare di un numero
+          giusto. La divisione arriva da `simulate`, che il confine di oggi lo
+          attraversa già per decidere cosa ritoccare. */}
       <Line
-        label="Costi previsti"
-        amount={-result.summary.totalCents}
+        label="Costi fino a oggi"
+        amount={-result.settledCents}
         currency={currency}
-        hint={`${String(result.summary.count)} scadenze nell’anno`}
+        hint="Già maturati: le leve non li toccano"
+      />
+      <Line
+        label="Costi da oggi a fine anno"
+        amount={-result.upcomingCents}
+        currency={currency}
+        hint={`È su questi che agisce la percentuale · ${String(result.summary.count)} scadenze in tutto l’anno`}
       />
 
       {unconvertedCount > 0 ? (
