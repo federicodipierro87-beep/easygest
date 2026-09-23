@@ -1523,6 +1523,31 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
 
 ## Debiti tecnici e note
 
+- **Due verifiche della Fase 6 restano da fare in un browser**, e sono scritte qui
+  perché non farle non si vede: la suite resta verde comunque.
+  1. **L'invalidazione al cambio di aliquota.** Aprire
+     `/previsioni?anno=2026&fatturato=50000`, annotare l'imposta, cambiare il
+     coefficiente in `/impostazioni/fisco`, tornare indietro **senza
+     ricaricare**: il numero deve essere nuovo. Dipende dal comportamento di
+     React Query a runtime, e la suite gira in `environment: 'node'`, dove non
+     c'è niente da rimontare. È l'unica delle sei verifiche del piano su cui
+     esiste un ragionamento e non una prova.
+  2. **Le due righe dei costi** introdotte da `f3296f7`, da guardare in
+     produzione: muovendo il cursore si deve muovere solo «Costi da oggi a fine
+     anno».
+- **Il collaudo dei numeri è girato sul database locale**, non su quello di
+  produzione: la parte reale di `/forecast` coincide al centesimo con `/reports`
+  sul 2025, 2026 e 2027 dei dati di `seed:demo`. È una prova sulla logica, non
+  sui dati veri. Per rifarla su Railway servono credenziali che uno script non
+  ha; a mano si confronta il totale della colonna «Reale» di
+  `/previsioni?anno=YYYY` con quello di `/report?from=YYYY-01-01&to=YYYY-12-31`.
+- **La porta 3001 può essere occupata da un altro progetto.** Il proxy di Vite
+  punta lì, e se un `node dist/index.js` estraneo la tiene, l'API di EasyGest
+  fallisce il bind **senza una riga di errore** nel log di `concurrently`:
+  `npm run dev` parte, il frontend si apre, e le chiamate finiscono su
+  un'applicazione diversa. Il sintomo che lo smaschera è `/health`, che in
+  EasyGest risponde `{status, uptimeSeconds, timestamp}` (`routes/health.ts:31`):
+  qualunque altra forma vuol dire che risponde qualcun altro.
 - **Advisory `esbuild` (low, GHSA-g7r4-m6w7-qqqr)**: riguarda il _dev server_ di
   esbuild su Windows, che non viene mai avviato (esbuild è usato solo come
   bundler da tsup, tsx e Vite). Nessuna fix non-breaking disponibile.
