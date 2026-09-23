@@ -168,6 +168,48 @@ const envSchema = z.object({
    * email già inviate.
    */
   NOTIFICATION_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(180),
+
+  /**
+   * Dove finiscono i file dei documenti.
+   *
+   * Facoltativa per la stessa ragione di `MAIL_TRANSPORT`: la regola che la
+   * deduce da `NODE_ENV` sta in `resolveStorageDriver`, qui sotto, e serve a
+   * due lettori — il plugin e la validazione.
+   */
+  STORAGE_DRIVER: z.enum(['s3', 'memory']).optional(),
+
+  /**
+   * Endpoint S3-compatible: MinIO in locale, R2 in produzione
+   * (`https://<account>.r2.cloudflarestorage.com`, o `.eu.` davanti per un
+   * bucket con giurisdizione UE — l'endpoint cambia con la giurisdizione, e
+   * quello sbagliato risponde `NoSuchBucket` a un bucket che esiste).
+   */
+  S3_ENDPOINT: z.url().optional(),
+  /** R2 vuole `auto`; MinIO accetta qualunque valore. */
+  S3_REGION: z.string().min(1).default('auto'),
+  S3_BUCKET: z.string().min(1).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  /**
+   * MinIO in locale risponde solo agli indirizzi `endpoint/bucket/chiave`, non
+   * a `bucket.endpoint/chiave`, che su `localhost` non si risolverebbe. R2
+   * accetta entrambi.
+   */
+  S3_FORCE_PATH_STYLE: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
+  /**
+   * Dimensione massima di un documento, in byte. Firmata dentro l'URL di
+   * caricamento: un file più grosso lo rifiuta lo storage, non la nostra
+   * buona volontà.
+   */
+  DOCUMENT_MAX_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(25 * 1024 * 1024),
 });
 
 /**
@@ -189,7 +231,81 @@ export function resolveMailTransport(env: Env): MailTransport {
   return 'log';
 }
 
+export type StorageDriver = 's3' | 'memory';
+
+/** Stessa regola di `resolveMailTransport`: nei test, niente rete. */
+export function resolveStorageDriver(env: Env): StorageDriver {
+  if (env.STORAGE_DRIVER !== undefined) return env.STORAGE_DRIVER;
+  return env.NODE_ENV === 'test' ? 'memory' : 's3';
+}
+
+export interface S3Config {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  forcePathStyle: boolean;
+}
+
+/**
+ * Il MinIO di `docker-compose.yml`, con le stesse credenziali scritte lì.
+ *
+ * Non sono segreti: stanno su GitHub da quando esiste il compose, e aprono un
+ * bucket che vive solo su questa macchina. Valgono **solo** in sviluppo; in
+ * produzione il `superRefine` qui sotto pretende ogni variabile, perché un
+ * default qui vorrebbe dire caricare le fatture su un bucket che non esiste —
+ * e scoprirlo al primo caricamento, non all'avvio.
+ */
+const LOCAL_MINIO: S3Config = {
+  endpoint: 'http://localhost:9000',
+  region: 'auto',
+  bucket: 'easygest-documents',
+  accessKeyId: 'easygest',
+  secretAccessKey: 'easygest-dev-secret',
+  forcePathStyle: true,
+};
+
+const S3_REQUIRED = [
+  'S3_ENDPOINT',
+  'S3_BUCKET',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
+] as const;
+
+export function resolveS3Config(env: Env): S3Config {
+  const local = env.NODE_ENV === 'development' ? LOCAL_MINIO : undefined;
+  const pick = (value: string | undefined, fallback: string | undefined, name: string): string => {
+    const resolved = value ?? fallback;
+    // Irraggiungibile fuori dallo sviluppo, perché la validazione ha già
+    // fermato l'avvio; lanciare qui è la cintura, non le bretelle.
+    if (resolved === undefined) throw new Error(`${name} mancante`);
+    return resolved;
+  };
+  return {
+    endpoint: pick(env.S3_ENDPOINT, local?.endpoint, 'S3_ENDPOINT'),
+    region: env.S3_REGION,
+    bucket: pick(env.S3_BUCKET, local?.bucket, 'S3_BUCKET'),
+    accessKeyId: pick(env.S3_ACCESS_KEY_ID, local?.accessKeyId, 'S3_ACCESS_KEY_ID'),
+    secretAccessKey: pick(env.S3_SECRET_ACCESS_KEY, local?.secretAccessKey, 'S3_SECRET_ACCESS_KEY'),
+    forcePathStyle:
+      env.S3_ENDPOINT === undefined && local !== undefined ? true : env.S3_FORCE_PATH_STYLE,
+  };
+}
+
 const envSchemaWithRules = envSchema.superRefine((value, ctx) => {
+  if (resolveStorageDriver(value) === 's3' && value.NODE_ENV !== 'development') {
+    for (const name of S3_REQUIRED) {
+      if (value[name] === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [name],
+          message: 'obbligatoria quando i documenti vanno su uno storage S3',
+        });
+      }
+    }
+  }
+
   // Il controllo sta qui e non in `RESEND_API_KEY` perché dipende da altri due
   // campi. Fallire all'avvio è il punto: senza, l'applicazione parte, lavora
   // tutto il giorno e scopre di non poter mandare niente alle sette del

@@ -10,6 +10,9 @@ import type { MailMessage } from './types';
 const required = {
   DATABASE_URL: 'postgresql://easygest:easygest@localhost:55432/easygest',
   JWT_SECRET: 'chiave-di-test-lunga-almeno-trentadue-caratteri',
+  // Questi test costruiscono configurazioni di produzione per parlare della
+  // posta; senza, a fermarle sarebbero le credenziali del bucket.
+  STORAGE_DRIVER: 'memory',
 };
 
 const nowhere = {

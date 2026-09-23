@@ -28,6 +28,8 @@
     "tsx": "^4.23.13"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1138.0",
+    "@aws-sdk/s3-request-presigner": "^3.1138.0",
     "@easygest/shared": "*",
     "@fastify/cookie": "^11.1.2",
     "@fastify/cors": "^11.3.0",

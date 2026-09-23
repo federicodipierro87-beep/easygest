@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { EnvValidationError, parseEnv } from './env';
+import { EnvValidationError, parseEnv, resolveS3Config, resolveStorageDriver } from './env';
 
 /**
  * Il minimo indispensabile perché la configurazione sia valida. I test che
@@ -145,5 +145,46 @@ describe('posta', () => {
     // Finisce concatenato ai percorsi dentro le email: un valore come
     // "easygest.it" produrrebbe link rotti in tutti i messaggi inviati.
     expect(() => parseEnv({ ...required, APP_BASE_URL: 'easygest.it' })).toThrow(/APP_BASE_URL/);
+  });
+});
+
+describe('storage dei documenti', () => {
+  const r2 = {
+    S3_ENDPOINT: 'https://account.eu.r2.cloudflarestorage.com',
+    S3_BUCKET: 'easygest-documents',
+    S3_ACCESS_KEY_ID: 'id',
+    S3_SECRET_ACCESS_KEY: 'segreto',
+  };
+  const production = { ...required, NODE_ENV: 'production', RESEND_API_KEY: 're_test' };
+
+  it('nei test tiene i file in memoria, altrove su S3', () => {
+    expect(resolveStorageDriver(parseEnv({ ...required, NODE_ENV: 'test' }))).toBe('memory');
+    expect(resolveStorageDriver(parseEnv(required))).toBe('s3');
+  });
+
+  it('in sviluppo punta al MinIO del compose senza configurare niente', () => {
+    const config = resolveS3Config(parseEnv(required));
+    expect(config.endpoint).toBe('http://localhost:9000');
+    expect(config.bucket).toBe('easygest-documents');
+    // MinIO su localhost risponde solo agli indirizzi con il bucket nel percorso.
+    expect(config.forcePathStyle).toBe(true);
+  });
+
+  it('in produzione non parte senza le credenziali del bucket', () => {
+    // Un default qui vorrebbe dire scoprirlo al primo caricamento, non all'avvio.
+    expect(() => parseEnv(production)).toThrow(/S3_BUCKET/);
+    expect(() => parseEnv({ ...production, ...r2, S3_SECRET_ACCESS_KEY: undefined })).toThrow(
+      /S3_SECRET_ACCESS_KEY/,
+    );
+    const config = resolveS3Config(parseEnv({ ...production, ...r2 }));
+    expect(config.endpoint).toBe(r2.S3_ENDPOINT);
+    expect(config.region).toBe('auto');
+    expect(config.forcePathStyle).toBe(false);
+  });
+
+  it('non usa le credenziali di MinIO fuori dallo sviluppo', () => {
+    expect(() => resolveS3Config(parseEnv({ ...required, NODE_ENV: 'test' }))).toThrow(
+      /S3_ENDPOINT/,
+    );
   });
 });

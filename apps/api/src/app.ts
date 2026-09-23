@@ -22,6 +22,7 @@ import { registerReportRoutes } from './routes/reports';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerVendorRoutes } from './routes/vendors';
 import type { Fetcher } from './services/frankfurter';
+import { storagePlugin } from './storage';
 
 /**
  * Formato unico delle risposte di errore.
@@ -152,6 +153,7 @@ export async function buildApp(env: Env, overrides: AppOverrides = {}): Promise<
   await app.register(prismaPlugin, env);
   await app.register(authPlugin, env);
   await app.register(mailerPlugin, env);
+  await app.register(storagePlugin, env);
   registerHealthRoutes(app);
   registerAuthRoutes(app, env);
   registerClientRoutes(app);
