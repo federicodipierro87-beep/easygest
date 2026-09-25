@@ -234,6 +234,8 @@ export const documentInputSchema = z
     }
   });
 export type DocumentInput = z.infer<typeof documentInputSchema>;
+/** Quello che si manda: le date come `2026-03-15`, prima che lo schema le converta. */
+export type DocumentFormInput = z.input<typeof documentInputSchema>;
 
 /**
  * La registrazione: i metadati più il file già caricato.

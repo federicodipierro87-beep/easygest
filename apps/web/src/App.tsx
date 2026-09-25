@@ -51,6 +51,9 @@ const ReportPage = lazy(async () => ({
 const ForecastPage = lazy(async () => ({
   default: (await import('@/pages/ForecastPage')).ForecastPage,
 }));
+const DocumentsPage = lazy(async () => ({
+  default: (await import('@/pages/DocumentsPage')).DocumentsPage,
+}));
 const ClientsPage = lazy(async () => ({
   default: (await import('@/pages/ClientsPage')).ClientsPage,
 }));
@@ -99,6 +102,7 @@ export function App() {
           <Route path="/scadenze" element={<DueDatesPage />} />
           <Route path="/report" element={<ReportPage />} />
           <Route path="/previsioni" element={<ForecastPage />} />
+          <Route path="/documenti" element={<DocumentsPage />} />
           <Route path="/clienti" element={<ClientsPage />} />
           <Route path="/fornitori" element={<VendorsPage />} />
           {/*

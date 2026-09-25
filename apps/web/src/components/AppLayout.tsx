@@ -23,6 +23,9 @@ const SECTIONS = [
   // cosa costerà e cosa resta. È la stessa lettura spostata in avanti, e chi
   // arriva alle previsioni ci arriva avendo guardato l'anno scorso.
   { to: '/previsioni', label: 'Previsioni' },
+  // Prima delle anagrafiche: si apre ogni volta che arriva una fattura, i
+  // clienti e i fornitori si toccano quando ne arriva uno nuovo.
+  { to: '/documenti', label: 'Documenti' },
   { to: '/clienti', label: 'Clienti' },
   { to: '/fornitori', label: 'Fornitori' },
   // Una voce sola per categorie e metodi di pagamento: si configurano una
