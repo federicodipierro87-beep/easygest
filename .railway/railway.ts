@@ -172,6 +172,22 @@ export default defineRailway(() => {
       // stesso indirizzo di `CORS_ORIGINS`, e se uno dei due cambia da solo si
       // ottengono email che puntano al nulla.
       APP_BASE_URL: 'https://easygest.netlify.app',
+
+      /**
+       * I documenti stanno su Cloudflare R2. Dichiarato come il trasporto
+       * della posta: con le chiavi mancanti il deploy si ferma all'avvio,
+       * invece di scoprirlo al primo caricamento.
+       *
+       * Endpoint e bucket non sono segreti — l'id dell'account non apre
+       * niente da solo. Le due chiavi sì, e stanno solo nella dashboard; il
+       * token è limitato agli oggetti di questo bucket, quindi non può né
+       * elencare gli altri né cambiarne il CORS, che si imposta a mano.
+       */
+      STORAGE_DRIVER: 's3',
+      S3_ENDPOINT: 'https://5237d51550d22325ccc9adffd25afca3.r2.cloudflarestorage.com',
+      S3_BUCKET: 'easygest',
+      S3_ACCESS_KEY_ID: preserve(),
+      S3_SECRET_ACCESS_KEY: preserve(),
     },
   });
 
