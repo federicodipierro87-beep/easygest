@@ -21,12 +21,18 @@ import { authFetch } from './session';
 export interface RelationOption {
   id: string;
   name: string;
+  /**
+   * Solo per clienti e fornitori. Serve alla compilazione automatica di un
+   * documento, che riconosce la controparte dalla partita IVA scritta sopra.
+   */
+  vatNumber?: string | null;
 }
 
-/** Una riga vista da qui: il nome è tutto quello che serve. */
+/** Una riga vista da qui: il nome, e per le anagrafiche la partita IVA. */
 interface NamedRow {
   id: string;
   name: string;
+  vatNumber?: string | null;
 }
 
 /** I metodi di pagamento chiamano `label` quello che gli altri chiamano `name`. */

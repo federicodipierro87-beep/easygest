@@ -6,7 +6,13 @@ import {
   type DocumentKind,
   type DocumentUploadTicket,
 } from '@easygest/shared';
-import { FileUp, LoaderCircle, TriangleAlert } from 'lucide-react';
+import {
+  type ExtractedDocument,
+  type ExtractionSource,
+  type ResolvedCounterparty,
+  resolveCounterparty,
+} from '@easygest/shared/extraction';
+import { FileUp, LoaderCircle, Sparkles, TriangleAlert } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
 import { SelectField, TextAreaField, TextField } from '@/components/FormField';
@@ -28,6 +34,7 @@ import {
   startUpload,
   titleFromFileName,
 } from '@/lib/documents';
+import { type ExtractionStep, extractDocument } from '@/lib/extract';
 import {
   euroFromCents,
   formatDay,
@@ -189,6 +196,133 @@ function documentFieldErrors(error: unknown): Record<string, string> {
   return result;
 }
 
+const FIELD_LABELS: Partial<Record<keyof DocumentFormState, string>> = {
+  kind: 'tipo',
+  title: 'titolo',
+  number: 'numero',
+  issueDate: 'data',
+  dueDate: 'scadenza',
+  netCents: 'imponibile',
+  vatRateBp: 'aliquota',
+  grossCents: 'totale',
+  currency: 'valuta',
+  clientId: 'cliente',
+  vendorId: 'fornitore',
+};
+
+/**
+ * Quello che si è letto dal file, messo nelle caselle che nessuno ha toccato.
+ *
+ * «Toccato» e non «vuoto»: il tipo e la data partono già valorizzati — fattura
+ * ricevuta, oggi — e sono proprio due dei campi che il file sa meglio di un
+ * default. Quello che invece l'utente ha scritto resta suo, anche se il file
+ * dice altro: la lettura arriva qualche secondo dopo, e vedersi cambiare sotto
+ * le dita una casella appena corretta sarebbe peggio di non avere l'aiuto.
+ *
+ * Restituisce anche l'elenco di ciò che ha scritto, perché l'avviso lo nomini:
+ * «controlla» senza dire cosa non si fa.
+ */
+export function applyExtraction(
+  form: DocumentFormState,
+  touched: ReadonlySet<keyof DocumentFormState>,
+  extracted: ExtractedDocument,
+  resolved: ResolvedCounterparty,
+): { form: DocumentFormState; filled: string[] } {
+  const next = { ...form };
+  const filled: string[] = [];
+  const put = <K extends keyof DocumentFormState>(key: K, value: DocumentFormState[K] | null) => {
+    if (value === null || value === '' || touched.has(key) || next[key] === value) return;
+    next[key] = value;
+    filled.push(FIELD_LABELS[key] ?? key);
+  };
+
+  const kind = resolved.kind ?? extracted.kind;
+  put('kind', kind);
+  put('number', extracted.number);
+  put('issueDate', extracted.issueDate);
+  put('dueDate', extracted.dueDate);
+  put('netCents', extracted.netCents === null ? null : euroFromCents(extracted.netCents));
+  put(
+    'vatRateBp',
+    extracted.vatRateBp === null ? null : percentFromBasisPoints(extracted.vatRateBp),
+  );
+  put('grossCents', extracted.grossCents === null ? null : euroFromCents(extracted.grossCents));
+  put('currency', extracted.currency);
+  put('clientId', resolved.clientId);
+  put('vendorId', resolved.vendorId);
+
+  // Solo dalla fattura elettronica, dove numero e controparte sono certi: un
+  // titolo costruito su un numero letto male sarebbe un errore in più da
+  // correggere, mentre quello dal nome del file è almeno fedele al file.
+  if (extracted.source === 'fatturapa' && extracted.number !== null) {
+    const party = kind === 'INVOICE_ACTIVE' ? extracted.customer : extracted.supplier;
+    put('title', `Fattura ${extracted.number}${party?.name == null ? '' : ` ${party.name}`}`);
+  }
+  return { form: next, filled };
+}
+
+const SOURCE_LABELS: Record<ExtractionSource, string> = {
+  fatturapa: 'dalla fattura elettronica',
+  text: 'dal testo del PDF',
+  ocr: 'con il riconoscimento del testo (OCR)',
+};
+
+type ExtractionState =
+  | { status: 'idle' }
+  | { status: 'running'; step: ExtractionStep }
+  | {
+      status: 'done';
+      source: ExtractionSource;
+      filled: string[];
+      /** La controparte scritta sulla fattura, quando non è in anagrafica. */
+      unknownParty: string | null;
+    }
+  | { status: 'failed' };
+
+function ExtractionNotice({ state }: { state: ExtractionState }) {
+  if (state.status === 'idle') return null;
+  if (state.status === 'running') {
+    return (
+      <p className="text-muted-foreground inline-flex items-center gap-2 text-sm">
+        <LoaderCircle aria-hidden className="size-4 animate-spin" />
+        {state.step === 'ocr'
+          ? 'Riconoscimento del testo della scansione… la prima volta scarica il modello, qualche secondo.'
+          : 'Lettura del documento…'}
+      </p>
+    );
+  }
+  if (state.status === 'failed') {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Non sono riuscito a leggere il file: compila i campi a mano.
+      </p>
+    );
+  }
+  return (
+    <div className="flex gap-2 rounded-md border border-sky-300 bg-sky-50 p-3 text-sm text-sky-950 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100">
+      <Sparkles aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <div>
+        {state.filled.length === 0 ? (
+          <p>Nel file non ho trovato dati da compilare.</p>
+        ) : (
+          <p>
+            Compilati {SOURCE_LABELS[state.source]}: {state.filled.join(', ')}.{' '}
+            {state.source === 'fatturapa'
+              ? 'Sono i dati della fattura, ma dagli un\u2019occhiata.'
+              : 'Sono letti da un testo libero: controllali prima di salvare.'}
+          </p>
+        )}
+        {state.unknownParty !== null && (
+          <p className="mt-1">
+            {state.unknownParty} non è fra i tuoi clienti o fornitori: aggiungilo in anagrafica per
+            riconoscerlo la prossima volta.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const KIND_OPTIONS = DOCUMENT_KINDS.map((kind) => ({
   value: kind,
   label: DOCUMENT_KIND_LABELS[kind],
@@ -245,18 +379,80 @@ export function DocumentFormDialog({
   const [form, setForm] = useState<DocumentFormState>(() => documentForm(document));
   const [local, setLocal] = useState<Record<string, string>>({});
   const [upload, setUpload] = useState<UploadState>({ status: 'none' });
+  const [extraction, setExtraction] = useState<ExtractionState>({ status: 'idle' });
   const relations = useRelationOptions();
   const fileInput = useRef<HTMLInputElement>(null);
   const creating = document === null;
 
+  // Le caselle scritte a mano, che la lettura del file non deve toccare.
+  const touched = useRef(new Set<keyof DocumentFormState>());
+  // L'anagrafica al momento in cui la lettura finisce, non a quello in cui è
+  // partita: se nel frattempo è arrivata, la controparte si riconosce lo stesso.
+  const known = useRef(relations);
+  known.current = relations;
+  // Cambiando file a lettura in corso, il risultato della prima non deve
+  // arrivare sulle caselle della seconda.
+  const reading = useRef(0);
+  // Il modulo com'è adesso, per applicarci la lettura senza passare da un
+  // aggiornamento funzionale — che React può rieseguire, e non restituisce
+  // l'elenco di ciò che ha scritto.
+  const current = useRef(form);
+  current.current = form;
+
   const set =
     <K extends keyof DocumentFormState>(key: K) =>
     (value: DocumentFormState[K]) => {
+      touched.current.add(key);
       setForm((previous) => ({ ...previous, [key]: value }));
     };
 
+  function read(file: File) {
+    reading.current += 1;
+    const token = reading.current;
+    setExtraction({ status: 'running', step: 'reading' });
+    extractDocument(file, (step) => {
+      if (reading.current === token) setExtraction({ status: 'running', step });
+    }).then(
+      (result) => {
+        if (reading.current !== token) return;
+        if (result === null) {
+          setExtraction({ status: 'failed' });
+          return;
+        }
+        const { extracted, text } = result;
+        const resolved = resolveCounterparty(
+          extracted,
+          { clients: known.current.clients, vendors: known.current.vendors },
+          text,
+        );
+        const applied = applyExtraction(current.current, touched.current, extracted, resolved);
+        setForm(applied.form);
+
+        const kind = resolved.kind ?? extracted.kind;
+        const party = kind === 'INVOICE_ACTIVE' ? extracted.customer : extracted.supplier;
+        const unresolved =
+          extracted.source === 'fatturapa' &&
+          resolved.clientId === null &&
+          resolved.vendorId === null;
+        setExtraction({
+          status: 'done',
+          source: extracted.source,
+          filled: applied.filled,
+          unknownParty:
+            unresolved && party?.name != null
+              ? `${party.name}${party.vatNumber === null ? '' : ` (P.IVA ${party.vatNumber})`}`
+              : null,
+        });
+      },
+      () => {
+        if (reading.current === token) setExtraction({ status: 'failed' });
+      },
+    );
+  }
+
   function choose(file: File) {
     setUpload({ status: 'preparing', file });
+    read(file);
     // Il titolo si propone solo se è ancora vuoto: chi l'ha già scritto e poi
     // cambia file non deve vederselo sovrascrivere.
     setForm((previous) =>
@@ -386,6 +582,7 @@ export function DocumentFormDialog({
               </div>
               {errors.file !== undefined && <p className="text-sm text-red-600">{errors.file}</p>}
               {hasFile && <Duplicates duplicates={upload.pending.ticket.duplicates} />}
+              <ExtractionNotice state={extraction} />
             </div>
           )}
 

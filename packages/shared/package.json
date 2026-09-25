@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Tipi, schemi Zod e logica di dominio pura condivisi tra API e frontend",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./extraction": "./src/extraction.ts"
   },
   "types": "./src/index.ts",
   "scripts": {
