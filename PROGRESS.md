@@ -1518,6 +1518,27 @@ confirmed:true}`). Chi preme _sta guardando_, e `confirmedAt` nullo è
   fingerprint diversi, segno che i server SSH sono più d'uno. È fissato in
   `~/.ssh/known_hosts`: se un giorno ne comparisse un altro, prima di accettarlo
   va verificato, non liquidato come «sarà l'altro server».
+- **I documenti stanno sul bucket R2 `easygest`, con posizione EEUR ma
+  giurisdizione standard, non «EU».** Sono due impostazioni diverse: la
+  posizione dice dove Cloudflare mette i dati, la giurisdizione garantisce per
+  contratto che non escano dall'Unione. Qui c'è solo la prima, e per un archivio
+  personale è stata accettata così. Cambiare giurisdizione vuol dire un bucket
+  nuovo, e l'endpoint prende un `.eu.` davanti: con quello sbagliato R2 risponde
+  `NoSuchBucket` a un bucket che esiste.
+- **Il token R2 vede solo gli oggetti di `easygest`.** Non elenca i bucket e non
+  tocca la loro configurazione, quindi **il CORS è impostato a mano** dalla
+  dashboard e non sta in nessun file del repository. Ammette solo
+  `https://easygest.netlify.app`, `PUT` e `GET`, e i due header firmati
+  (`content-type`, `x-amz-checksum-sha256`). Verificato con un preflight: 204
+  da Netlify, 403 da un'altra origine. Senza CORS i caricamenti falliscono nel
+  browser e **da nessun'altra parte**: l'API firma l'URL, `curl` carica, i test
+  passano. Se un giorno il frontend cambia dominio, questa regola va aggiornata
+  insieme a `CORS_ORIGINS`.
+- **Le chiavi R2 sono passate dalla chat.** Sono su Railway via `--stdin` e non
+  compaiono in nessun comando né in `.claude/`, ma restano nella trascrizione
+  della conversazione. Il committente ha scelto di tenerle; la rotazione — Roll
+  del token in Cloudflare, poi `Get-Clipboard | railway variable set
+S3_SECRET_ACCESS_KEY --stdin --service api` — resta a portata di mano.
 
 ---
 
