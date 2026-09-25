@@ -3,6 +3,7 @@ export * from './categories';
 export * from './clients';
 export * from './csv';
 export * from './dashboard';
+export * from './documents';
 export * from './expenses';
 export * from './fiscal';
 export * from './forecast';
