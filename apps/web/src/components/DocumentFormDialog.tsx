@@ -31,6 +31,7 @@ import {
   type PendingUpload,
   UploadError,
   formatFileSize,
+  readWithAi,
   startUpload,
   titleFromFileName,
 } from '@/lib/documents';
@@ -251,10 +252,14 @@ export function applyExtraction(
   put('clientId', resolved.clientId);
   put('vendorId', resolved.vendorId);
 
-  // Solo dalla fattura elettronica, dove numero e controparte sono certi: un
-  // titolo costruito su un numero letto male sarebbe un errore in più da
-  // correggere, mentre quello dal nome del file è almeno fedele al file.
-  if (extracted.source === 'fatturapa' && extracted.number !== null) {
+  // Solo dalla fattura elettronica e dall'AI, dove numero e controparte sono
+  // affidabili: un titolo costruito su un numero letto male dalle regole
+  // sarebbe un errore in più da correggere, mentre quello dal nome del file è
+  // almeno fedele al file.
+  if (
+    (extracted.source === 'fatturapa' || extracted.source === 'ai') &&
+    extracted.number !== null
+  ) {
     const party = kind === 'INVOICE_ACTIVE' ? extracted.customer : extracted.supplier;
     put('title', `Fattura ${extracted.number}${party?.name == null ? '' : ` ${party.name}`}`);
   }
@@ -263,13 +268,14 @@ export function applyExtraction(
 
 const SOURCE_LABELS: Record<ExtractionSource, string> = {
   fatturapa: 'dalla fattura elettronica',
+  ai: 'dall’AI',
   text: 'dal testo del PDF',
   ocr: 'con il riconoscimento del testo (OCR)',
 };
 
 type ExtractionState =
   | { status: 'idle' }
-  | { status: 'running'; step: ExtractionStep }
+  | { status: 'running'; step: ExtractionStep | 'ai' }
   | {
       status: 'done';
       source: ExtractionSource;
@@ -277,7 +283,7 @@ type ExtractionState =
       /** La controparte scritta sulla fattura, quando non è in anagrafica. */
       unknownParty: string | null;
     }
-  | { status: 'failed' };
+  | { status: 'failed'; message?: string };
 
 function ExtractionNotice({ state }: { state: ExtractionState }) {
   if (state.status === 'idle') return null;
@@ -287,14 +293,16 @@ function ExtractionNotice({ state }: { state: ExtractionState }) {
         <LoaderCircle aria-hidden className="size-4 animate-spin" />
         {state.step === 'ocr'
           ? 'Riconoscimento del testo della scansione… la prima volta scarica il modello, qualche secondo.'
-          : 'Lettura del documento…'}
+          : state.step === 'ai'
+            ? 'Lettura con l’AI… di solito una ventina di secondi.'
+            : 'Lettura del documento…'}
       </p>
     );
   }
   if (state.status === 'failed') {
     return (
       <p className="text-muted-foreground text-sm">
-        Non sono riuscito a leggere il file: compila i campi a mano.
+        {state.message ?? 'Non sono riuscito a leggere il file: compila i campi a mano.'}
       </p>
     );
   }
@@ -309,7 +317,9 @@ function ExtractionNotice({ state }: { state: ExtractionState }) {
             Compilati {SOURCE_LABELS[state.source]}: {state.filled.join(', ')}.{' '}
             {state.source === 'fatturapa'
               ? 'Sono i dati della fattura, ma dagli un\u2019occhiata.'
-              : 'Sono letti da un testo libero: controllali prima di salvare.'}
+              : state.source === 'ai'
+                ? 'Letti dall’AI sul documento: controllali prima di salvare.'
+                : 'Sono letti da un testo libero: controllali prima di salvare. Se sono sbagliati, prova «Leggi con AI».'}
           </p>
         )}
         {state.unknownParty !== null && (
@@ -419,33 +429,69 @@ export function DocumentFormDialog({
           setExtraction({ status: 'failed' });
           return;
         }
-        const { extracted, text } = result;
-        const resolved = resolveCounterparty(
-          extracted,
-          { clients: known.current.clients, vendors: known.current.vendors },
-          text,
-        );
-        const applied = applyExtraction(current.current, touched.current, extracted, resolved);
-        setForm(applied.form);
-
-        const kind = resolved.kind ?? extracted.kind;
-        const party = kind === 'INVOICE_ACTIVE' ? extracted.customer : extracted.supplier;
-        const unresolved =
-          extracted.source === 'fatturapa' &&
-          resolved.clientId === null &&
-          resolved.vendorId === null;
-        setExtraction({
-          status: 'done',
-          source: extracted.source,
-          filled: applied.filled,
-          unknownParty:
-            unresolved && party?.name != null
-              ? `${party.name}${party.vatNumber === null ? '' : ` (P.IVA ${party.vatNumber})`}`
-              : null,
-        });
+        apply(result.extracted, result.text);
       },
       () => {
         if (reading.current === token) setExtraction({ status: 'failed' });
+      },
+    );
+  }
+
+  /** Un risultato, da qualunque strada arrivi, sulle caselle non toccate. */
+  function apply(extracted: ExtractedDocument, text: string) {
+    const resolved = resolveCounterparty(
+      extracted,
+      { clients: known.current.clients, vendors: known.current.vendors },
+      text,
+    );
+    const applied = applyExtraction(current.current, touched.current, extracted, resolved);
+    setForm(applied.form);
+
+    const kind = resolved.kind ?? extracted.kind;
+    const party = kind === 'INVOICE_ACTIVE' ? extracted.customer : extracted.supplier;
+    const unresolved =
+      (extracted.source === 'fatturapa' || extracted.source === 'ai') &&
+      resolved.clientId === null &&
+      resolved.vendorId === null;
+    setExtraction({
+      status: 'done',
+      source: extracted.source,
+      filled: applied.filled,
+      unknownParty:
+        unresolved && party?.name != null
+          ? `${party.name}${party.vatNumber === null ? '' : ` (P.IVA ${party.vatNumber})`}`
+          : null,
+    });
+  }
+
+  /**
+   * Dove l'AI può leggere: il file appena caricato, quando è arrivato sul
+   * bucket, oppure il documento che si sta modificando. Prima della fine del
+   * caricamento no — l'API lo prende dal bucket, e lì non c'è ancora.
+   */
+  const aiTarget =
+    document !== null
+      ? { documentId: document.id }
+      : upload.status === 'uploaded'
+        ? { storageKey: upload.pending.ticket.storageKey }
+        : null;
+
+  function readAi() {
+    if (aiTarget === null) return;
+    reading.current += 1;
+    const token = reading.current;
+    setExtraction({ status: 'running', step: 'ai' });
+    readWithAi(aiTarget).then(
+      (extracted) => {
+        if (reading.current === token) apply(extracted, '');
+      },
+      (error: unknown) => {
+        if (reading.current !== token) return;
+        setExtraction({
+          status: 'failed',
+          message:
+            error instanceof ApiError ? error.message : 'La lettura con l’AI non è riuscita.',
+        });
       },
     );
   }
@@ -582,6 +628,36 @@ export function DocumentFormDialog({
               </div>
               {errors.file !== undefined && <p className="text-sm text-red-600">{errors.file}</p>}
               {hasFile && <Duplicates duplicates={upload.pending.ticket.duplicates} />}
+            </div>
+          )}
+
+          {(creating ? upload.status !== 'none' : true) && (
+            <div className="grid gap-2">
+              <div className="flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    aiTarget === null ||
+                    (extraction.status === 'running' && extraction.step === 'ai')
+                  }
+                  title={
+                    aiTarget === null
+                      ? 'Disponibile a caricamento finito'
+                      : 'Il file viene inviato ad Anthropic per la lettura. Costa qualche centesimo.'
+                  }
+                  onClick={readAi}
+                >
+                  <Sparkles aria-hidden className="size-4" />
+                  Leggi con AI
+                </Button>
+                {!creating && extraction.status === 'idle' && (
+                  <span className="text-muted-foreground text-xs">
+                    Rilegge il file e riscrive i campi che non hai toccato in questa finestra.
+                  </span>
+                )}
+              </div>
               <ExtractionNotice state={extraction} />
             </div>
           )}

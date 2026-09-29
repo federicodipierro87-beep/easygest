@@ -24,7 +24,12 @@ import type { DocumentKind } from './documents';
  * finisce nell'archivio.
  */
 
-export type ExtractionSource = 'fatturapa' | 'text' | 'ocr';
+/**
+ * Da dove viene la lettura. `ai` è un modello che ha letto il documento come
+ * lo legge una persona: più preciso delle regole su qualunque impaginazione,
+ * ma pur sempre una lettura e non un dato, come invece è la FatturaPA.
+ */
+export type ExtractionSource = 'fatturapa' | 'ai' | 'text' | 'ocr';
 
 export interface ExtractedParty {
   name: string | null;
@@ -634,14 +639,30 @@ export function resolveCounterparty(
 ): ResolvedCounterparty {
   const invoice = extracted.kind === 'INVOICE_PASSIVE' || extracted.kind === 'INVOICE_ACTIVE';
 
-  if (extracted.source === 'fatturapa') {
-    const vendor = known.vendors.find((v) => sameVat(v.vatNumber, extracted.supplier?.vatNumber));
-    if (vendor !== undefined)
-      return { kind: 'INVOICE_PASSIVE', clientId: null, vendorId: vendor.id };
-    const client = known.clients.find((c) => sameVat(c.vatNumber, extracted.customer?.vatNumber));
-    if (client !== undefined)
-      return { kind: 'INVOICE_ACTIVE', clientId: client.id, vendorId: null };
-    return { kind: null, clientId: null, vendorId: null };
+  // Chi ha emesso e a chi è intestato sono noti: prima la partita IVA, che è
+  // certa, poi il nome, che copre il fornitore messo in anagrafica senza.
+  if (extracted.source === 'fatturapa' || extracted.source === 'ai') {
+    const { supplier, customer } = extracted;
+    // Il nome vale solo se manca una delle due partite IVA: due partite IVA
+    // diverse sono due soggetti diversi, anche se si chiamano uguale.
+    const byName = (party: KnownParty, written: ExtractedParty | null) =>
+      (party.vatNumber == null || written?.vatNumber == null) &&
+      sameName(party.name, written?.name);
+    const passive = (vendor: KnownParty | undefined): ResolvedCounterparty | undefined =>
+      vendor && { kind: invoice ? 'INVOICE_PASSIVE' : null, clientId: null, vendorId: vendor.id };
+    const active = (client: KnownParty | undefined): ResolvedCounterparty | undefined =>
+      client && { kind: invoice ? 'INVOICE_ACTIVE' : null, clientId: client.id, vendorId: null };
+
+    return (
+      passive(known.vendors.find((v) => sameVat(v.vatNumber, supplier?.vatNumber))) ??
+      active(known.clients.find((c) => sameVat(c.vatNumber, customer?.vatNumber))) ??
+      passive(known.vendors.find((v) => byName(v, supplier))) ??
+      active(known.clients.find((c) => byName(c, customer))) ?? {
+        kind: null,
+        clientId: null,
+        vendorId: null,
+      }
+    );
   }
 
   const byVat = <T extends KnownParty>(parties: readonly T[]) =>
@@ -662,6 +683,20 @@ export function resolveCounterparty(
     return { kind: invoice ? 'INVOICE_ACTIVE' : null, clientId: client.id, vendorId: null };
   }
   return { kind: null, clientId: null, vendorId: null };
+}
+
+/** «Aruba S.p.A.» e «ARUBA SPA» sono lo stesso nome; «Aru» e «Aruba» no. */
+function sameName(known: string, written: string | null | undefined): boolean {
+  if (written == null) return false;
+  const bare = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/\b(s\.?\s?r\.?\s?l|s\.?\s?p\.?\s?a|s\.?\s?n\.?\s?c|s\.?\s?a\.?\s?s|srls)\b\.?/g, '')
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+  const [a, b] = [bare(known), bare(written)];
+  if (a.length < 4 || b.length < 4) return false;
+  return a === b || a.startsWith(`${b} `) || b.startsWith(`${a} `);
 }
 
 function escapeRegExp(text: string): string {

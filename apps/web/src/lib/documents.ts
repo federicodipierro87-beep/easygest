@@ -9,6 +9,7 @@ import {
   type Paginated,
   mimeTypeFromFileName,
 } from '@easygest/shared';
+import type { ExtractedDocument } from '@easygest/shared/extraction';
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { ALL } from './expenses';
@@ -242,6 +243,22 @@ export async function openDocument(id: string, disposition: 'inline' | 'attachme
     target?.close();
     throw error;
   }
+}
+
+/**
+ * Chiede all'API di leggere il file con l'AI.
+ *
+ * Non manda il file: l'API lo prende dal bucket. Il browser indica solo quale,
+ * con la chiave del caricamento appena finito o con l'id di un documento già
+ * archiviato.
+ */
+export function readWithAi(
+  target: { storageKey: string } | { documentId: string },
+): Promise<ExtractedDocument> {
+  return authFetch<ExtractedDocument>('/documents/read', {
+    method: 'POST',
+    body: JSON.stringify(target),
+  });
 }
 
 /** «2,4 MB», «312 kB»: quanto basta per riconoscere un file. */

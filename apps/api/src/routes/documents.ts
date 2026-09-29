@@ -27,6 +27,7 @@ import {
 } from '../lib/resources';
 import { parseBody, parseQuery } from '../lib/validation';
 import { requireUser } from '../plugins/auth';
+import { type DocumentReader, ReaderError } from '../services/document-reader';
 
 /**
  * L'archivio dei documenti.
@@ -186,12 +187,121 @@ async function searchIds(
 
 const NULLABLE_SORT_FIELDS = new Set<DocumentListQuery['sort']>(['dueDate', 'grossCents']);
 
+/**
+ * Cosa leggere con l'AI: il file appena caricato, prima che esista il
+ * documento, oppure un documento già in archivio — che è il caso di chi ha
+ * caricato una fattura letta male dalle regole locali e vuole riprovare.
+ */
+const readSchema = z.union([
+  z.strictObject({ storageKey: z.string().trim().min(1).max(200) }),
+  z.strictObject({ documentId: z.string().trim().min(1).max(40) }),
+]);
+
+/**
+ * Oltre questa soglia il file non si manda: in Base64 cresce di un terzo, e
+ * l'API di Anthropic ha un tetto di 32 MB per richiesta.
+ */
+const AI_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Ogni lettura costa qualche centesimo: il tetto generale dell'API — trecento
+ * al minuto — su questa rotta vorrebbe dire qualche euro al minuto per un
+ * ciclo sbagliato nel frontend.
+ */
+const READ_RATE_LIMIT = { rateLimit: { max: 20, timeWindow: '10 minutes' } } as const;
+
+async function readAll(stream: NodeJS.ReadableStream): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
 const downloadQuerySchema = z.object({
   disposition: z.enum(['inline', 'attachment']).default('inline'),
 });
 
-export function registerDocumentRoutes(app: FastifyInstance, env: Env): void {
+export function registerDocumentRoutes(
+  app: FastifyInstance,
+  env: Env,
+  reader: DocumentReader | null,
+): void {
   const guarded = { preHandler: app.authenticate };
+
+  /**
+   * Legge un documento con Claude e restituisce i campi, senza salvare niente.
+   *
+   * Il file lo prende l'API dal bucket, non il browser: la chiave di Anthropic
+   * resta qui, e il documento fa un viaggio solo, da R2 ad Anthropic. Cosa
+   * farne lo decide il modulo, con le stesse regole della lettura locale.
+   */
+  app.post('/documents/read', { ...guarded, config: READ_RATE_LIMIT }, async (request, reply) => {
+    const user = requireUser(request);
+    if (reader === null) {
+      throw new ResourceError(
+        503,
+        'AI_UNAVAILABLE',
+        'La lettura con l’AI non è configurata su questo server.',
+      );
+    }
+    const target = parseBody(readSchema, request.body);
+
+    let storageKey: string;
+    let mimeType: string;
+    if ('documentId' in target) {
+      const row = await app.prisma.document.findFirst({
+        where: { id: target.documentId, userId: user.id },
+        select: { storageKey: true, mimeType: true },
+      });
+      if (row === null) throw notFound('Documento');
+      ({ storageKey, mimeType } = row);
+    } else {
+      // Come alla registrazione: una chiave fuori dal proprio prefisso è di
+      // un altro, e per chi chiede non esiste.
+      const stored = target.storageKey.startsWith(keyPrefix(user.id))
+        ? await app.storage.head(target.storageKey)
+        : null;
+      if (stored === null) {
+        throw new ResourceError(
+          422,
+          DOCUMENT_ERROR_CODES.uploadMissing,
+          'Il file non risulta caricato: aspetta la fine del caricamento.',
+        );
+      }
+      storageKey = target.storageKey;
+      mimeType = stored.contentType ?? 'application/octet-stream';
+    }
+
+    const head = await app.storage.head(storageKey);
+    if (head !== null && head.sizeBytes > AI_MAX_BYTES) {
+      throw new ResourceError(
+        422,
+        DOCUMENT_ERROR_CODES.fileTooLarge,
+        'Il file è troppo grande per la lettura con l’AI (massimo 20 MB).',
+      );
+    }
+
+    const bytes = await readAll(await app.storage.read(storageKey));
+    try {
+      const extracted = await reader.read({ bytes, mimeType });
+      request.log.info({ storageKey, source: extracted.source }, 'Documento letto con l’AI');
+      return await reply.send(extracted);
+    } catch (error) {
+      if (error instanceof ReaderError) {
+        throw new ResourceError(422, error.code, error.message);
+      }
+      // Un errore dell'API di Anthropic — chiave sbagliata, credito finito,
+      // sovraccarico — non è colpa di chi ha premuto il bottone: nei log il
+      // dettaglio, a schermo una frase che dice di riprovare.
+      request.log.error({ err: error }, 'Lettura con l’AI non riuscita');
+      throw new ResourceError(
+        502,
+        'AI_FAILED',
+        'Il servizio di lettura non ha risposto: riprova fra poco.',
+      );
+    }
+  });
 
   app.get('/documents', guarded, async (request, reply) => {
     const user = requireUser(request);

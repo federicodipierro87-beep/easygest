@@ -6,12 +6,14 @@ import {
   type DocumentUploadTicket,
   type Paginated,
 } from '@easygest/shared';
+import type { ExtractedDocument } from '@easygest/shared/extraction';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../app';
 import { signAccessToken } from '../auth/tokens';
 import { type Env, parseEnv } from '../config/env';
+import { ReaderError, type DocumentReader } from '../services/document-reader';
 import type { MemoryStorage } from '../storage';
 
 /**
@@ -124,8 +126,37 @@ async function search(user: TestUser, query: string): Promise<string[]> {
   return response.json<Paginated<Document>>().items.map((d) => d.title);
 }
 
+/**
+ * Il lettore finto: ricorda cosa gli è arrivato e risponde quello che gli si
+ * dice. Quello vero manda il file ad Anthropic, e i test non devono né
+ * spendere né dipendere dalla rete.
+ */
+const readerCalls: { bytes: Buffer; mimeType: string }[] = [];
+let nextReading: () => Promise<ExtractedDocument> = () =>
+  Promise.resolve({
+    source: 'ai',
+    kind: 'INVOICE_PASSIVE',
+    number: 'A26-7',
+    issueDate: '2026-03-15',
+    dueDate: null,
+    netCents: 10_000,
+    vatRateBp: 2200,
+    vatCents: 2_200,
+    grossCents: 12_200,
+    currency: 'EUR',
+    supplier: { name: 'Aruba S.p.A.', vatNumber: '04552920482' },
+    customer: null,
+    vatNumbers: ['04552920482'],
+  });
+const fakeReader: DocumentReader = {
+  read(input) {
+    readerCalls.push(input);
+    return nextReading();
+  },
+};
+
 beforeAll(async () => {
-  app = await buildApp(env);
+  app = await buildApp(env, { documentReader: fakeReader });
   await app.ready();
   storage = app.storage as MemoryStorage;
   alice = await createUser();
@@ -133,6 +164,7 @@ beforeAll(async () => {
 });
 
 afterEach(async () => {
+  readerCalls.length = 0;
   await app.prisma.document.deleteMany({ where: { userId: { in: [alice.id, bob.id] } } });
   storage.objects.clear();
 });
@@ -377,5 +409,74 @@ describe('modifica, download e cancellazione', () => {
     });
     expect(response.statusCode).toBe(404);
     expect(storage.objects.size).toBe(1);
+  });
+});
+
+describe('lettura con l’AI', () => {
+  function read(user: TestUser, payload: Record<string, unknown>) {
+    return app.inject({ method: 'POST', url: '/documents/read', headers: user.auth, payload });
+  }
+
+  it('legge il file appena caricato, prima che il documento esista', async () => {
+    const file = fileOf('%PDF da leggere');
+    const { storageKey } = (await ticket(alice, file)).json<DocumentUploadTicket>();
+    storage.put(storageKey, file.bytes);
+
+    const response = await read(alice, { storageKey });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<ExtractedDocument>()).toMatchObject({ source: 'ai', number: 'A26-7' });
+    // Al lettore arriva il file vero, con il suo tipo.
+    expect(readerCalls).toHaveLength(1);
+    expect(readerCalls[0]?.bytes.equals(file.bytes)).toBe(true);
+    expect(readerCalls[0]?.mimeType).toBe('application/pdf');
+  });
+
+  it('rilegge un documento già in archivio', async () => {
+    const document = await upload(alice, '%PDF già archiviato');
+    const response = await read(alice, { documentId: document.id });
+    expect(response.statusCode).toBe(200);
+    expect(readerCalls).toHaveLength(1);
+  });
+
+  it('non manda ad Anthropic il file di un altro', async () => {
+    const file = fileOf('%PDF di Bob da leggere');
+    const { storageKey } = (await ticket(bob, file)).json<DocumentUploadTicket>();
+    storage.put(storageKey, file.bytes);
+    const document = await upload(bob, '%PDF documento di Bob');
+
+    expect((await read(alice, { storageKey })).statusCode).toBe(422);
+    expect((await read(alice, { documentId: document.id })).statusCode).toBe(404);
+    expect(readerCalls).toHaveLength(0);
+  });
+
+  it('dice perché non ha letto, senza trasformarlo in un guasto', async () => {
+    const document = await upload(alice, '%PDF rifiutato');
+    nextReading = () => Promise.reject(new ReaderError('AI_REFUSED', 'Non letto.'));
+    const refused = await read(alice, { documentId: document.id });
+    expect(refused.statusCode).toBe(422);
+    expect(refused.json<ErrorBody>().error.code).toBe('AI_REFUSED');
+
+    // Un errore dell'API di Anthropic è un 502 con una frase generica: il
+    // dettaglio — una chiave sbagliata, il credito finito — resta nei log.
+    nextReading = () => Promise.reject(new Error('401 invalid x-api-key'));
+    const failed = await read(alice, { documentId: document.id });
+    expect(failed.statusCode).toBe(502);
+    expect(failed.json<ErrorBody>().error.code).toBe('AI_FAILED');
+  });
+
+  it('senza chiave la funzione è spenta, e lo dice', async () => {
+    const withoutAi = await buildApp(env, { documentReader: null });
+    try {
+      const response = await withoutAi.inject({
+        method: 'POST',
+        url: '/documents/read',
+        headers: alice.auth,
+        payload: { documentId: 'qualunque' },
+      });
+      expect(response.statusCode).toBe(503);
+      expect(response.json<ErrorBody>().error.code).toBe('AI_UNAVAILABLE');
+    } finally {
+      await withoutAi.close();
+    }
   });
 });

@@ -210,6 +210,19 @@ const envSchema = z.object({
     .int()
     .positive()
     .default(25 * 1024 * 1024),
+
+  /**
+   * Chiave dell'API di Anthropic, per leggere i documenti con Claude.
+   *
+   * Facoltativa di proposito, al contrario di quella di Resend: senza, la
+   * lettura con l'AI è spenta e il bottone lo dice, mentre tutto il resto —
+   * compresa la lettura locale — funziona uguale. Una funzione a pagamento non
+   * deve poter impedire all'applicazione di partire.
+   */
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+
+  /** Il modello che legge i documenti. */
+  AI_MODEL: z.string().min(1).default('claude-opus-5'),
 });
 
 /**

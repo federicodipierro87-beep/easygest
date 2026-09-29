@@ -22,6 +22,7 @@ import { registerPaymentMethodRoutes } from './routes/payment-methods';
 import { registerReportRoutes } from './routes/reports';
 import { registerSettingsRoutes } from './routes/settings';
 import { registerVendorRoutes } from './routes/vendors';
+import { type DocumentReader, createClaudeReader } from './services/document-reader';
 import type { Fetcher } from './services/frankfurter';
 import { storagePlugin } from './storage';
 
@@ -108,6 +109,12 @@ function describeError(error: unknown): {
  */
 export interface AppOverrides {
   fxFetcher?: Fetcher;
+  /**
+   * Chi legge i documenti con l'AI. Nei test un finto, perché la versione vera
+   * manda il file ad Anthropic e costa; `null` la spegne come farebbe una
+   * chiave mancante.
+   */
+  documentReader?: DocumentReader | null;
 }
 
 export async function buildApp(env: Env, overrides: AppOverrides = {}): Promise<FastifyInstance> {
@@ -167,7 +174,15 @@ export async function buildApp(env: Env, overrides: AppOverrides = {}): Promise<
   registerNotificationRoutes(app);
   registerReportRoutes(app);
   registerForecastRoutes(app);
-  registerDocumentRoutes(app, env);
+  registerDocumentRoutes(
+    app,
+    env,
+    overrides.documentReader !== undefined
+      ? overrides.documentReader
+      : env.ANTHROPIC_API_KEY === undefined
+        ? null
+        : createClaudeReader({ apiKey: env.ANTHROPIC_API_KEY, model: env.AI_MODEL }),
+  );
   registerSettingsRoutes(app);
   registerJobRoutes(app, env, overrides.fxFetcher);
 

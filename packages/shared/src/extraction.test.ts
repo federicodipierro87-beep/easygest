@@ -280,6 +280,31 @@ describe('controparte', () => {
     });
   });
 
+  it('lettura AI: riconosce per nome chi è in anagrafica senza partita IVA', () => {
+    const ai = {
+      ...extractFromText('Fattura n. 5'),
+      source: 'ai' as const,
+      kind: 'INVOICE_PASSIVE' as const,
+      supplier: { name: 'ACME INDUSTRIE S.r.l.', vatNumber: '00743110157' },
+      customer: { name: 'Studio Rossi', vatNumber: null },
+    };
+    const withoutVat = {
+      vendors: [{ id: 'v-acme', name: 'Acme Industrie', vatNumber: null }],
+      clients: [],
+    };
+    expect(resolveCounterparty(ai, withoutVat).vendorId).toBe('v-acme');
+  });
+
+  it('due partite IVA diverse sono due soggetti diversi, anche con lo stesso nome', () => {
+    const ai = {
+      ...extractFromText('Fattura n. 5'),
+      source: 'ai' as const,
+      supplier: { name: 'Aruba S.p.A.', vatNumber: '01234567897' },
+      customer: null,
+    };
+    expect(resolveCounterparty(ai, known).vendorId).toBeNull();
+  });
+
   it('non decide niente se nessuna parte è in anagrafica', () => {
     expect(resolveCounterparty(extractFromText('Fattura n. 3'), known, 'Fattura n. 3')).toEqual({
       kind: null,
